@@ -15,13 +15,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat project.parts/part-* | tr -cd 'A-Za-z0-9+/=' > project.zip.b64
-          count=$(wc -c < project.zip.b64)
-          echo "Clean Base64 length: $count"
-          rem=$((count % 4))
-          if [ "$rem" -eq 2 ]; then printf '==' >> project.zip.b64; fi
-          if [ "$rem" -eq 3 ]; then printf '=' >> project.zip.b64; fi
-          if [ "$rem" -eq 1 ]; then echo "Invalid Base64 length"; exit 1; fi
+          cat project.parts/part-* > project.zip.b64
           base64 --decode project.zip.b64 > project.zip
           unzip -t project.zip
           mkdir -p project
@@ -32,20 +26,22 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.0.0'
+          gradle-version: '9.6.0'
 
       - name: Build debug APK
         working-directory: project
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: ThreadsSticker-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
