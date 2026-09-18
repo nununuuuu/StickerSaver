@@ -161,7 +161,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                 title = { Text("偵測到 Threads 連結") },
                 text = { Text("要貼入 Sticker Saver 嗎？") },
                 dismissButton = {
-                    TextButton(onClick = { clipboardPromptUrl = null }) { Text("不要") }
+                    TextButton(onClick = { clipboardPromptUrl = null }) { Text("取消") }
                 },
                 confirmButton = {
                     Button(
@@ -171,7 +171,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                             clipboardPromptUrl = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Accent)
-                    ) { Text("貼入") }
+                    ) { Text("貼上") }
                 }
             )
         }
@@ -226,7 +226,13 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                                     }
                                     Spacer(Modifier.height(5.dp))
                                     Text(
-                                        "更新期間請勿關閉 Sticker Saver。首次切換到固定正式簽章版本時，舊版需要先解除安裝一次；之後即可直接在 App 內原地更新。",
+                                        "• 未及時更新可能導致部分功能無法正常使用",
+                                        color = Color(0xFF8A1717),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "• 若選擇取消更新，可在「關於」內自行手動更新",
                                         color = Color(0xFF8A1717),
                                         style = MaterialTheme.typography.bodySmall
                                     )
