@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 class MainActivity : ComponentActivity() {
     private val sharedText = mutableStateOf<String?>(null)
     private val clipboardText = mutableStateOf<String?>(null)
+    private val resumeToken = mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -20,8 +21,14 @@ class MainActivity : ComponentActivity() {
                 activity = this,
                 initialSharedText = sharedText.value,
                 focusedClipboardText = clipboardText.value,
+                resumeToken = resumeToken.value,
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumeToken.value += 1
     }
 
     override fun onNewIntent(intent: Intent) {
