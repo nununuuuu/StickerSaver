@@ -37,6 +37,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.io.File
@@ -86,19 +88,42 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
         }
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(activity, appPrefs) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val listener = ClipboardManager.OnPrimaryClipChangedListener {
-            if (!appPrefs.getBoolean("clipboard_monitor", false)) return@OnPrimaryClipChangedListener
-            val text = clipboard.primaryClip
-                ?.getItemAt(0)
-                ?.coerceToText(context)
-                ?.toString()
-                .orEmpty()
-            extractThreadsUrl(text)?.let { clipboardPromptUrl = it }
+
+        fun checkClipboard() {
+            if (!appPrefs.getBoolean("clipboard_monitor", false)) return
+            val text = runCatching {
+                clipboard.primaryClip
+                    ?.getItemAt(0)
+                    ?.coerceToText(context)
+                    ?.toString()
+                    .orEmpty()
+            }.getOrDefault("")
+            extractThreadsUrl(text)?.let { url ->
+                if (url != pendingInput && clipboardPromptUrl == null) {
+                    clipboardPromptUrl = url
+                }
+            }
         }
+
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            checkClipboard()
+        }
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                checkClipboard()
+            }
+        }
+
         clipboard.addPrimaryClipChangedListener(listener)
-        onDispose { clipboard.removePrimaryClipChangedListener(listener) }
+        activity.lifecycle.addObserver(lifecycleObserver)
+        checkClipboard()
+
+        onDispose {
+            clipboard.removePrimaryClipChangedListener(listener)
+            activity.lifecycle.removeObserver(lifecycleObserver)
+        }
     }
 
     MaterialTheme(
