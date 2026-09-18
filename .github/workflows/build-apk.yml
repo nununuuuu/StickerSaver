@@ -2,8 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: write
@@ -74,6 +72,7 @@ jobs:
               perm.set(A + "name", "android.permission.REQUEST_INSTALL_PACKAGES")
               root.insert(0, perm)
 
+          app.set(A + "label", "Sticker Saver")
           app.set(A + "icon", "@mipmap/ic_sticker_saver_launcher")
           app.set(A + "roundIcon", "@mipmap/ic_sticker_saver_launcher_round")
 
@@ -102,6 +101,8 @@ jobs:
               raise RuntimeError("MainActivity not found in AndroidManifest.xml")
 
           main.set(A + "launchMode", "singleTask")
+          main.set(A + "label", "Sticker Saver")
+          main.set(A + "icon", "@mipmap/ic_sticker_saver_launcher")
 
           has_send = False
           for intent_filter in main.findall("intent-filter"):
@@ -163,6 +164,18 @@ jobs:
           set -euo pipefail
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           "$APKSIGNER" verify --verbose --print-certs project/app/build/outputs/apk/release/app-release.apk
+
+      - name: Verify final APK branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="project/app/build/outputs/apk/release/app-release.apk"
+          APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          "$APKANALYZER" manifest print "$APK" > final-manifest.xml
+          grep -F 'android:label="Sticker Saver"' final-manifest.xml
+          grep -F 'android:icon="@mipmap/ic_sticker_saver_launcher"' final-manifest.xml
+          grep -F 'android:roundIcon="@mipmap/ic_sticker_saver_launcher_round"' final-manifest.xml
+          unzip -l "$APK" | grep -E 'res/.*/ic_sticker_saver_launcher|res/drawable/sticker_saver_icon'
 
       - name: Read version and prepare APK
         id: version
