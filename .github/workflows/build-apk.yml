@@ -31,7 +31,34 @@ jobs:
           cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
           cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
+          mkdir -p project/app/src/main/res/drawable
+          mkdir -p project/app/src/main/res/values
+          mkdir -p project/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p project/app/src/main/res/xml
+          cp overrides/resources/drawable/ic_sticker_saver_foreground.xml project/app/src/main/res/drawable/ic_sticker_saver_foreground.xml
+          cp overrides/resources/values/sticker_saver_icon.xml project/app/src/main/res/values/sticker_saver_icon.xml
+          cp overrides/resources/mipmap-anydpi-v26/ic_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          cp overrides/resources/mipmap-anydpi-v26/ic_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          cp overrides/resources/xml/file_paths.xml project/app/src/main/res/xml/file_paths.xml
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("project/app/src/main/AndroidManifest.xml")
+          s = p.read_text()
+          if ".fileprovider" not in s:
+              provider = '''        <provider
+                  android:name="androidx.core.content.FileProvider"
+                  android:authorities="${applicationId}.fileprovider"
+                  android:exported="false"
+                  android:grantUriPermissions="true">
+                  <meta-data
+                      android:name="android.support.FILE_PROVIDER_PATHS"
+                      android:resource="@xml/file_paths" />
+              </provider>
+          '''
+              s = s.replace("</application>", provider + "    </application>")
+          p.write_text(s)
+          PY
 
       - uses: actions/setup-java@v4
         with:
