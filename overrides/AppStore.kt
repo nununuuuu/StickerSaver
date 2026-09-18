@@ -32,6 +32,7 @@ class AppStore(context: Context) {
                         )
                     }
                 }.ifEmpty { listOf(MediaOccurrence(MediaOriginType.POST)) }
+                val categoryIdsJson = o.optJSONArray("categoryIds") ?: JSONArray()
                 add(
                     StickerItem(
                         id = o.getString("id"),
@@ -43,6 +44,11 @@ class AppStore(context: Context) {
                         useCount = o.optInt("useCount", 0),
                         lastUsedAt = o.optLong("lastUsedAt").takeIf { it > 0 },
                         occurrences = occurrences,
+                        categoryIds = buildList {
+                            for (j in 0 until categoryIdsJson.length()) {
+                                categoryIdsJson.optString(j).takeIf { it.isNotBlank() }?.let(::add)
+                            }
+                        }.distinct(),
                     )
                 )
             }
@@ -50,6 +56,28 @@ class AppStore(context: Context) {
             sticker.mimeType.equals("image/gif", ignoreCase = true) ||
                 sticker.mediaUrl.substringBefore('?').lowercase().endsWith(".gif")
         }.toMutableList()
+    }
+
+    @Synchronized
+    fun loadCategories(): MutableList<StickerCategory> {
+        val root = readRoot()
+        val arr = root.optJSONArray("categories") ?: JSONArray()
+        return buildList {
+            for (i in 0 until arr.length()) {
+                val o = arr.optJSONObject(i) ?: continue
+                val id = o.optString("id")
+                val name = o.optString("name").trim()
+                if (id.isNotBlank() && name.isNotBlank()) {
+                    add(
+                        StickerCategory(
+                            id = id,
+                            name = name,
+                            createdAt = o.optLong("createdAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+            }
+        }.distinctBy { it.id }.toMutableList()
     }
 
     @Synchronized
@@ -79,7 +107,7 @@ class AppStore(context: Context) {
     }
 
     @Synchronized
-    fun save(stickers: List<StickerItem>, sources: List<SourceRecord>) {
+    fun save(stickers: List<StickerItem>, sources: List<SourceRecord>, categories: List<StickerCategory>) {
         val root = JSONObject()
         root.put("stickers", JSONArray().apply {
             stickers.forEach { s ->
@@ -91,6 +119,7 @@ class AppStore(context: Context) {
                     put("localCachePath", s.localCachePath ?: "")
                     put("useCount", s.useCount)
                     put("lastUsedAt", s.lastUsedAt ?: 0)
+                    put("categoryIds", JSONArray(s.categoryIds))
                     put("occurrences", JSONArray().apply {
                         s.occurrences.forEach { occurrence ->
                             put(JSONObject().apply {
@@ -101,6 +130,15 @@ class AppStore(context: Context) {
                             })
                         }
                     })
+                })
+            }
+        })
+        root.put("categories", JSONArray().apply {
+            categories.forEach { c ->
+                put(JSONObject().apply {
+                    put("id", c.id)
+                    put("name", c.name)
+                    put("createdAt", c.createdAt)
                 })
             }
         })
