@@ -154,7 +154,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                     if (comments) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(!allComments, { if (!loading) allComments = false })
-                            Text("熱門前")
+                            Text("前")
                             OutlinedTextField(
                                 value = topText,
                                 onValueChange = { v -> if (!loading && v.length <= 3 && v.all(Char::isDigit)) topText = v },
@@ -163,13 +163,13 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                             )
-                            Text("則")
+                            Text("則有貼圖留言")
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(allComments, { if (!loading) allComments = true })
-                            Text("全部留言")
+                            Text("全部有貼圖留言")
                         }
-                        if (allComments) Text("全部留言可能較久；取消只停止尚未開始的項目，已完成結果會保留。", style = MaterialTheme.typography.bodySmall)
+                        if (allComments) Text("會下載目前解析到的全部有貼圖留言；取消只停止尚未開始的項目，已完成結果會保留。", style = MaterialTheme.typography.bodySmall)
                     }
 
                     Spacer(Modifier.height(12.dp))
