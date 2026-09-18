@@ -1,16 +1,26 @@
-## 新功能
-- 主貼文貼圖改用 Threads preload JSON 解析，可直接取得 inline sticker / GIPHY sticker
-- 留言解析改為讀取 Threads data-sjs JSON 內的 reply 物件
-- 留言預設抓前 5 則「有貼圖的留言」，不再讓無貼圖留言佔名額
-- 可選擇解析目前 preload 中全部有貼圖留言
-- 來源仍可分別選擇「貼文」與「留言」，也可同時解析
+## v0.2.2
 
-## 修正
-- 改用已驗證可取得 preload JSON 的 Desktop Chrome + Sec-Fetch HTTP headers
-- 修正舊版只掃 HTML / img / video 時抓不到 Threads inline sticker 的問題
-- 主貼文與留言會分開記錄來源，不再把整頁預載貼圖混成同一組
-- 保留舊媒體解析邏輯作 fallback
-- 留言模式不再標示為「熱門前 X」，避免與 Threads 未公開的熱門排序混淆
+### 修正
+- 移除錯誤的紫色選取色塊，回復 Sticker Saver 的暖米白／深墨色介面
+- Threads 解析改為只保存 preload JSON 中真正的 inline Sticker/GIF，不再把頭像、一般圖片、截圖或其他頁面媒體混進貼圖庫
+- 舊版本已存入的非 GIF 項目會在載入時過濾
+- 加入 Coil GIF 解碼支援，修正 GIF 在貼圖格中顯示空白的問題
 
-## 已知限制
-- 「全部有貼圖留言」目前只包含 Threads 初始 preload JSON 內可取得的留言；尚未自動翻頁載入後續留言
+### 貼圖庫
+- 分成「最新 / 常用 / 全部」
+- 最新只顯示 8 張
+- 常用依使用次數排序，只顯示 8 張
+- 全部顯示完整貼圖庫
+- 新增頁與貼圖庫中的貼圖可點一下複製
+- 長按貼圖可從 Sticker Saver 移除
+
+### 來源紀錄
+- 改成以原始 Threads 貼文為單位顯示貼文卡片
+- 顯示作者、原始連結、貼文文字與代表貼圖
+- 不再顯示「貼文 / 留言」來源標籤；即使貼圖來自留言，也歸在使用者貼入的原始貼文下
+
+### App 圖示
+- 加入 Sticker Saver 專用 adaptive launcher icon，不再使用預設 Android 圖示
+
+### 已知限制
+- 留言分頁（預載 20 則、再載入後續留言）尚未接上 Threads 的後續 cursor 請求；目前仍只處理初始 preload 可取得的留言
