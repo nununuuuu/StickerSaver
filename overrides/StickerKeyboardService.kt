@@ -3,8 +3,10 @@ package com.local.threadssticker
 import android.content.ClipDescription
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
-import android.net.Uri
+import android.graphics.Paint
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.View
@@ -75,8 +77,8 @@ class StickerKeyboardService : InputMethodService() {
     override fun onCreateInputView(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            setBackgroundColor(Color.rgb(247, 245, 242))
+            setPadding(dp(10), dp(10), dp(10), dp(8))
+            setBackgroundColor(PAPER)
         }
 
         val top = LinearLayout(this).apply {
@@ -84,21 +86,25 @@ class StickerKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        top.addView(actionText("返回") { returnToPreviousKeyboard() }, linear(dp(64), dp(44)))
+        top.addView(arrowButton { returnToPreviousKeyboard() }, linear(dp(42), dp(42)))
 
         search = EditText(this).apply {
             hint = "搜尋分類"
-            textSize = 15f
+            textSize = 14f
             setSingleLine(true)
-            setPadding(dp(12), 0, dp(12), 0)
-            setBackgroundColor(Color.WHITE)
+            setTextColor(INK)
+            setHintTextColor(MUTED)
+            setPadding(dp(14), 0, dp(12), 0)
+            background = roundedBackground(TILE, dp(18).toFloat())
             addTextChangedListener(SimpleTextWatcher { refreshGrid() })
         }
-        top.addView(search, LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+        top.addView(search, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
             marginStart = dp(8)
         })
 
         categorySpinner = Spinner(this).apply {
+            background = roundedBackground(WARM_CARD, dp(18).toFloat())
+            setPadding(dp(8), 0, dp(6), 0)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                     categoryMode = when (position) {
@@ -108,10 +114,11 @@ class StickerKeyboardService : InputMethodService() {
                     }
                     refreshGrid()
                 }
+
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             }
         }
-        top.addView(categorySpinner, LinearLayout.LayoutParams(dp(128), dp(44)).apply {
+        top.addView(categorySpinner, LinearLayout.LayoutParams(dp(112), dp(42)).apply {
             marginStart = dp(8)
         })
         root.addView(top)
@@ -119,23 +126,28 @@ class StickerKeyboardService : InputMethodService() {
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(6), 0, dp(6))
+            setPadding(dp(2), dp(8), dp(2), dp(8))
         }
         recentTab = tabText("最近") { scopeMode = ScopeMode.RECENT; refreshGrid() }
         frequentTab = tabText("常用") { scopeMode = ScopeMode.FREQUENT; refreshGrid() }
         allTab = tabText("全部") { scopeMode = ScopeMode.ALL; refreshGrid() }
-        tabs.addView(recentTab, LinearLayout.LayoutParams(0, dp(40), 1f))
-        tabs.addView(frequentTab, LinearLayout.LayoutParams(0, dp(40), 1f))
-        tabs.addView(allTab, LinearLayout.LayoutParams(0, dp(40), 1f))
+
+        tabs.addView(recentTab, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(4) })
+        tabs.addView(frequentTab, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+            marginStart = dp(4)
+            marginEnd = dp(4)
+        })
+        tabs.addView(allTab, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(4) })
         root.addView(tabs)
 
         grid = GridView(this).apply {
             numColumns = 4
-            verticalSpacing = dp(6)
-            horizontalSpacing = dp(6)
+            verticalSpacing = dp(8)
+            horizontalSpacing = dp(8)
             stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            setPadding(0, 0, 0, dp(4))
+            setPadding(dp(1), dp(2), dp(1), dp(6))
             clipToPadding = false
+            selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
                 this@StickerKeyboardService.adapter?.itemAt(position)?.let(::insertSticker)
             }
@@ -144,7 +156,7 @@ class StickerKeyboardService : InputMethodService() {
                 true
             }
         }
-        root.addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(280)))
+        root.addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(286)))
 
         updateCategorySpinner()
         refreshGrid()
@@ -160,12 +172,36 @@ class StickerKeyboardService : InputMethodService() {
             val count = allStickers.count { category.id in it.categoryIds }
             category.name + "  " + count
         }
-        val spinnerAdapter = android.widget.ArrayAdapter(
+
+        val spinnerAdapter = object : android.widget.ArrayAdapter<String>(
             this,
-            android.R.layout.simple_spinner_item,
+            android.R.layout.simple_spinner_dropdown_item,
             labels
-        ).also { it.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getView(position, convertView, parent).apply {
+                    (this as? TextView)?.apply {
+                        setTextColor(INK)
+                        textSize = 14f
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(10), 0, dp(8), 0)
+                    }
+                }
+            }
+
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
+                return super.getDropDownView(position, convertView, parent).apply {
+                    (this as? TextView)?.apply {
+                        setTextColor(INK)
+                        textSize = 14f
+                        setPadding(dp(14), dp(10), dp(14), dp(10))
+                        setBackgroundColor(TILE)
+                    }
+                }
+            }
+        }
         categorySpinner.adapter = spinnerAdapter
+
         val targetIndex = when (current) {
             null -> 0
             "__uncategorized__" -> 1
@@ -205,10 +241,15 @@ class StickerKeyboardService : InputMethodService() {
 
     private fun updateTabStyle() {
         if (!::recentTab.isInitialized) return
+
         fun style(view: TextView, active: Boolean) {
-            view.setTextColor(Color.rgb(36, 34, 32))
-            view.setBackgroundColor(if (active) Color.rgb(232, 222, 210) else Color.TRANSPARENT)
+            view.setTextColor(INK)
+            view.background = roundedBackground(
+                if (active) WARM_SELECTED else Color.TRANSPARENT,
+                dp(18).toFloat()
+            )
         }
+
         style(recentTab, scopeMode == ScopeMode.RECENT)
         style(frequentTab, scopeMode == ScopeMode.FREQUENT)
         style(allTab, scopeMode == ScopeMode.ALL)
@@ -238,7 +279,9 @@ class StickerKeyboardService : InputMethodService() {
                     null
                 )
             }.onSuccess { accepted ->
-                if (!accepted) Toast.makeText(this@StickerKeyboardService, "此輸入框不支援貼圖", Toast.LENGTH_SHORT).show()
+                if (!accepted) {
+                    Toast.makeText(this@StickerKeyboardService, "此輸入框不支援貼圖", Toast.LENGTH_SHORT).show()
+                }
             }.onFailure {
                 Toast.makeText(this@StickerKeyboardService, "插入貼圖失敗", Toast.LENGTH_SHORT).show()
             }
@@ -291,26 +334,52 @@ class StickerKeyboardService : InputMethodService() {
         }
     }
 
-    private fun actionText(label: String, click: () -> Unit) = TextView(this).apply {
-        text = label
-        textSize = 14f
-        gravity = Gravity.CENTER
-        setTextColor(Color.rgb(36, 34, 32))
-        setBackgroundColor(Color.rgb(240, 236, 230))
-        setOnClickListener { click() }
-    }
+    private fun arrowButton(click: () -> Unit): View =
+        object : View(this) {
+            private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = INK
+                style = Paint.Style.STROKE
+                strokeWidth = dp(2.4f)
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+
+            init {
+                background = roundedBackground(WARM_CARD, dp(18).toFloat())
+                setOnClickListener { click() }
+                contentDescription = "返回上一個鍵盤"
+            }
+
+            override fun onDraw(canvas: Canvas) {
+                super.onDraw(canvas)
+                val cx = width * 0.53f
+                val cy = height * 0.5f
+                val arm = dp(7f)
+                canvas.drawLine(cx + arm * 0.6f, cy, cx - arm, cy, paint)
+                canvas.drawLine(cx - arm, cy, cx - arm * 0.25f, cy - arm * 0.75f, paint)
+                canvas.drawLine(cx - arm, cy, cx - arm * 0.25f, cy + arm * 0.75f, paint)
+            }
+        }
 
     private fun tabText(label: String, click: () -> Unit) = TextView(this).apply {
         text = label
         textSize = 14f
         gravity = Gravity.CENTER
-        setTextColor(Color.rgb(36, 34, 32))
+        setTextColor(INK)
         setOnClickListener { click() }
     }
+
+    private fun roundedBackground(fillColor: Int, radius: Float): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColor(fillColor)
+            cornerRadius = radius
+        }
 
     private fun linear(width: Int, height: Int) = LinearLayout.LayoutParams(width, height)
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
 
     private class StickerAdapter(
         private val context: Context,
@@ -325,11 +394,15 @@ class StickerKeyboardService : InputMethodService() {
         override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup?): View {
             val image = (convertView as? ImageView) ?: ImageView(context).apply {
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setPadding(dp(context, 5), dp(context, 5), dp(context, 5), dp(context, 5))
-                setBackgroundColor(Color.WHITE)
+                setPadding(dp(context, 7), dp(context, 7), dp(context, 7), dp(context, 7))
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    setColor(TILE)
+                    cornerRadius = dp(context, 17).toFloat()
+                }
                 layoutParams = android.widget.AbsListView.LayoutParams(
                     android.widget.AbsListView.LayoutParams.MATCH_PARENT,
-                    dp(context, 72)
+                    dp(context, 76)
                 )
             }
             val sticker = items[position]
@@ -346,5 +419,14 @@ class StickerKeyboardService : InputMethodService() {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = onChanged()
         override fun afterTextChanged(s: android.text.Editable?) = Unit
+    }
+
+    companion object {
+        private val PAPER = Color.rgb(247, 245, 242)
+        private val INK = Color.rgb(36, 34, 32)
+        private val MUTED = Color.rgb(117, 110, 103)
+        private val WARM_CARD = Color.rgb(240, 236, 230)
+        private val WARM_SELECTED = Color.rgb(232, 222, 210)
+        private val TILE = Color.rgb(254, 253, 252)
     }
 }
