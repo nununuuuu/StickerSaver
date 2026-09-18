@@ -3,6 +3,7 @@ package com.local.threadssticker
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.security.MessageDigest
 
 class AppStore(context: Context) {
@@ -37,7 +38,8 @@ class AppStore(context: Context) {
                         sourceUrl = o.getString("sourceUrl"),
                         mediaUrl = o.getString("mediaUrl"),
                         mimeType = o.optString("mimeType", "image/webp"),
-                        localCachePath = o.optString("localCachePath").takeIf { it.isNotBlank() },
+                        localCachePath = o.optString("localCachePath")
+                            .takeIf { it.isNotBlank() && File(it).exists() },
                         useCount = o.optInt("useCount", 0),
                         lastUsedAt = o.optLong("lastUsedAt").takeIf { it > 0 },
                         occurrences = occurrences,
@@ -66,6 +68,7 @@ class AppStore(context: Context) {
                         author = o.optString("author").takeIf { it.isNotBlank() },
                         snapshotPath = o.optString("snapshotPath").takeIf { it.isNotBlank() },
                         postText = o.optString("postText").takeIf { it.isNotBlank() },
+                        thumbnailUrl = o.optString("thumbnailUrl").takeIf { it.isNotBlank() },
                         createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                         lastUsedAt = o.optLong("lastUsedAt").takeIf { it > 0 },
                         stickerIds = buildList { for (j in 0 until ids.length()) add(ids.getString(j)) },
@@ -110,6 +113,7 @@ class AppStore(context: Context) {
                     put("author", s.author ?: "")
                     put("snapshotPath", s.snapshotPath ?: "")
                     put("postText", s.postText ?: "")
+                    put("thumbnailUrl", s.thumbnailUrl ?: "")
                     put("createdAt", s.createdAt)
                     put("lastUsedAt", s.lastUsedAt ?: 0)
                     put("stickerIds", JSONArray(s.stickerIds))
