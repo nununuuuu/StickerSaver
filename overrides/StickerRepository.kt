@@ -24,7 +24,7 @@ class StickerRepository(private val context: Context) {
         cancelRequested: AtomicBoolean = AtomicBoolean(false),
         onProgress: (ParseProgress) -> Unit = {},
     ): ParseResult {
-        return parser.parse(
+        val result = parser.parse(
             inputUrl = url,
             options = options,
             isCancellationRequested = { cancelRequested.get() },
@@ -33,6 +33,8 @@ class StickerRepository(private val context: Context) {
                 onProgress(progress)
             }
         )
+        cacheParsedMedia(result.media)
+        return result
     }
 
     private fun mergeParsedMedia(sourceUrl: String, author: String?, postText: String?, media: List<ParsedMedia>) {
@@ -69,15 +71,46 @@ class StickerRepository(private val context: Context) {
         val sourceList = _sources.value.toMutableList()
         val sourceId = AppStore.stableId(sourceUrl)
         val old = sourceList.firstOrNull { it.id == sourceId }
+        val preferredThumbnail = media.firstOrNull { it.occurrence.type == MediaOriginType.POST }?.url
+            ?: media.firstOrNull()?.url
+            ?: old?.thumbnailUrl
         val replacement = (old ?: SourceRecord(id = sourceId, url = sourceUrl)).copy(
             author = author ?: old?.author,
             postText = postText ?: old?.postText,
+            thumbnailUrl = preferredThumbnail,
             stickerIds = (old?.stickerIds.orEmpty() + ids).distinct(),
         )
 
         sourceList.removeAll { it.id == sourceId }
         sourceList.add(0, replacement)
         publish(stickerList, sourceList)
+    }
+
+    private suspend fun cacheParsedMedia(media: List<ParsedMedia>) {
+        if (media.isEmpty()) return
+        val mediaIds = media.map { parsed ->
+            val canonicalKey = parsed.url.substringBefore('?').substringBefore('#')
+            AppStore.stableId(parsed.occurrence.let { media.firstOrNull()?.occurrence }; "")
+        }
+        val targetIds = media.map { parsed ->
+            val canonicalKey = parsed.url.substringBefore('?').substringBefore('#')
+            val sourceUrl = _stickers.value.firstOrNull { it.mediaUrl.substringBefore('?') == parsed.url.substringBefore('?') }?.sourceUrl
+            if (sourceUrl == null) null else AppStore.stableId(sourceUrl + "|" + canonicalKey)
+        }.filterNotNull().toSet()
+
+        if (targetIds.isEmpty()) return
+        val updated = _stickers.value.toMutableList()
+        var changed = false
+        updated.indices.forEach { index ->
+            val sticker = updated[index]
+            if (sticker.id !in targetIds) return@forEach
+            val file = runCatching { cache.ensureCached(sticker) }.getOrNull() ?: return@forEach
+            if (sticker.localCachePath != file.absolutePath) {
+                updated[index] = sticker.copy(localCachePath = file.absolutePath)
+                changed = true
+            }
+        }
+        if (changed) publish(updated, _sources.value)
     }
 
     fun updateNote(sourceId: String, note: String) {
