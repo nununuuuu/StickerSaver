@@ -613,9 +613,25 @@ private fun PostSourceCard(source: SourceRecord, related: List<StickerItem>, cli
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = WarmSelected, modifier = Modifier.size(42.dp)) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text("@", fontWeight = FontWeight.Bold)
+                val thumbModel: Any? = source.thumbnailUrl
+                    ?: related.firstOrNull()?.localCachePath?.let(::File)
+                    ?: related.firstOrNull()?.mediaUrl
+                    ?: source.snapshotPath?.let(::File)
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = Tile,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    if (thumbModel != null) {
+                        AsyncImage(
+                            model = thumbModel,
+                            contentDescription = "來源縮圖",
+                            modifier = Modifier.fillMaxSize().padding(3.dp)
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text("@", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
                 Spacer(Modifier.width(12.dp))
