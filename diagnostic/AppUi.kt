@@ -114,15 +114,14 @@ private suspend fun runReplyDiagnostic(url: String): String = withContext(Dispat
             .map { it.range.first }
             .toList()
 
+        // Scan the entire HTML, not just a fixed window after each Barcelona preloader.
+        // Threads can place reply connection payloads in separate prefetched blocks.
         val mediaObjects = linkedMapOf<String, String>()
-
-        preloadPositions.forEach { start ->
-            extractJsonObjectsForKey(body, "media", start, 200_000).forEach { obj ->
-                val pk = firstString(obj, "pk")
-                    ?: firstString(obj, "id")
-                    ?: return@forEach
-                mediaObjects.putIfAbsent(pk, obj)
-            }
+        extractJsonObjectsForKey(body, "media", 0, body.length).forEach { obj ->
+            val pk = firstString(obj, "pk")
+                ?: firstString(obj, "id")
+                ?: return@forEach
+            mediaObjects.putIfAbsent(pk, obj)
         }
 
         data class Row(
@@ -155,7 +154,9 @@ private suspend fun runReplyDiagnostic(url: String): String = withContext(Dispat
             appendLine("HTTP: " + response.code)
             appendLine("HTML chars: " + body.length)
             appendLine("Barcelona preloaders: " + preloadPositions.size)
-            appendLine("Unique media objects: " + rows.size)
+            appendLine("Global media objects: " + rows.size)
+            appendLine("is_reply=true markers in HTML: " + Regex("\\\"is_reply\\\"\\s*:\\s*true").findAll(body).count())
+            appendLine("direct_reply_count markers: " + Regex("direct_reply_count", RegexOption.IGNORE_CASE).findAll(body).count())
             appendLine("Non-reply media: " + mainRows.size)
             appendLine("Reply media: " + replyRows.size)
             appendLine("Replies with stickers: " + replyWithStickers.size)
@@ -215,7 +216,7 @@ private fun extractJsonObjectsForKey(
     startAt: Int,
     maxChars: Int,
 ): List<String> {
-    val end = (startAt + maxChars).coerceAtMost(text.length)
+    val end = if (maxChars >= text.length) text.length else (startAt + maxChars).coerceAtMost(text.length)
     val region = text.substring(startAt, end)
     val regex = Regex("\\\"" + Regex.escape(key) + "\\\"\\s*:\\s*\\{")
     val results = mutableListOf<String>()
