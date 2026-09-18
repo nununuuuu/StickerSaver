@@ -16,6 +16,10 @@ jobs:
         run: |
           set -euo pipefail
           cat project.parts/part-* > project.zip.b64
+          rem=$(($(wc -c < project.zip.b64) % 4))
+          if [ "$rem" -eq 2 ]; then printf '==' >> project.zip.b64; fi
+          if [ "$rem" -eq 3 ]; then printf '=' >> project.zip.b64; fi
+          if [ "$rem" -eq 1 ]; then echo "Invalid Base64 length"; exit 1; fi
           base64 --decode project.zip.b64 > project.zip
           unzip -t project.zip
           mkdir -p project
