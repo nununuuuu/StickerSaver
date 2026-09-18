@@ -15,8 +15,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat project.parts/part-* > project.zip.b64
-          rem=$(($(wc -c < project.zip.b64) % 4))
+          cat project.parts/part-* | tr -cd 'A-Za-z0-9+/=' > project.zip.b64
+          count=$(wc -c < project.zip.b64)
+          echo "Clean Base64 length: $count"
+          rem=$((count % 4))
           if [ "$rem" -eq 2 ]; then printf '==' >> project.zip.b64; fi
           if [ "$rem" -eq 3 ]; then printf '=' >> project.zip.b64; fi
           if [ "$rem" -eq 1 ]; then echo "Invalid Base64 length"; exit 1; fi
