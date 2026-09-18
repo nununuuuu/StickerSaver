@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 data class UpdateInfo(
@@ -67,6 +68,43 @@ class UpdateChecker(private val context: Context) {
             features = parseSection(body, listOf("新功能", "Features", "Added")),
             fixes = parseSection(body, listOf("修正", "修正功能", "Fixes", "Fixed")),
         )
+    }
+
+
+    suspend fun downloadApk(
+        info: UpdateInfo,
+        onProgress: (Int) -> Unit,
+    ): File = withContext(Dispatchers.IO) {
+        val url = info.apkUrl ?: error("此版本沒有可下載的 APK")
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "StickerSaver/${currentVersion()}")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("下載更新失敗：${response.code}")
+            val body = response.body
+            val total = body.contentLength()
+            val dir = context.cacheDir.resolve("updates").apply { mkdirs() }
+            val out = dir.resolve("StickerSaver-v${info.version}.apk")
+            body.byteStream().use { input ->
+                out.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var downloaded = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (total > 0) {
+                            onProgress(((downloaded * 100L) / total).toInt().coerceIn(0, 100))
+                        }
+                    }
+                }
+            }
+            onProgress(100)
+            out
+        }
     }
 
     private fun parseSection(body: String, headings: List<String>): List<String> {
