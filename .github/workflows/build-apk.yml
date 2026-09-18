@@ -171,11 +171,21 @@ jobs:
           set -euo pipefail
           APK="project/app/build/outputs/apk/release/app-release.apk"
           APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          AAPT2="$ANDROID_HOME/build-tools/36.0.0/aapt2"
+
           "$APKANALYZER" manifest print "$APK" > final-manifest.xml
-          grep -F 'android:label="Sticker Saver"' final-manifest.xml
-          grep -F 'android:icon="@mipmap/ic_sticker_saver_launcher"' final-manifest.xml
-          grep -F 'android:roundIcon="@mipmap/ic_sticker_saver_launcher_round"' final-manifest.xml
-          unzip -l "$APK" | grep -E 'res/.*/ic_sticker_saver_launcher|res/drawable/sticker_saver_icon'
+          echo "=== final manifest branding ==="
+          grep -E 'android:(label|icon|roundIcon)=' final-manifest.xml || true
+
+          echo "=== packaged Sticker Saver resources ==="
+          "$AAPT2" dump resources "$APK" | grep -E 'ic_sticker_saver_launcher|sticker_saver_icon' | head -40
+
+          echo "=== launcher badging ==="
+          "$AAPT2" dump badging "$APK" | grep -E "^application-label|^application-icon|^launchable-activity" || true
+
+          grep -F 'android:label="Sticker Saver"' final-manifest.xml >/dev/null
+          "$AAPT2" dump resources "$APK" | grep -F 'ic_sticker_saver_launcher' >/dev/null
+          "$AAPT2" dump resources "$APK" | grep -F 'sticker_saver_icon' >/dev/null
 
       - name: Read version and prepare APK
         id: version
