@@ -2,6 +2,8 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -56,6 +58,7 @@ jobs:
           cp overrides/resources/xml/file_paths.xml "$RES_DIR/xml/file_paths.xml"
           rm -f "$RES_DIR/drawable/sticker_saver_icon."*
           base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > "$RES_DIR/drawable/sticker_saver_icon.jpg"
+          echo "bf7689e26ff1e5db3311498b3ba0ea97be773ec18e6f26f3b2f373c7587e3a78  $RES_DIR/drawable/sticker_saver_icon.jpg" | sha256sum -c -
 
       - uses: actions/setup-java@v4
         with:
