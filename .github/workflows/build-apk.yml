@@ -40,6 +40,8 @@ jobs:
           cp overrides/resources/values/sticker_saver_icon.xml project/app/src/main/res/values/sticker_saver_icon.xml
           cp overrides/resources/mipmap-anydpi-v26/ic_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
           cp overrides/resources/mipmap-anydpi-v26/ic_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          cp overrides/resources/mipmap-anydpi-v26/ic_sticker_saver_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_sticker_saver_launcher.xml
+          cp overrides/resources/mipmap-anydpi-v26/ic_sticker_saver_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_sticker_saver_launcher_round.xml
           cp overrides/resources/xml/file_paths.xml project/app/src/main/res/xml/file_paths.xml
           base64 --decode overrides/resources/sticker_saver_icon.webp.b64 > project/app/src/main/res/drawable/sticker_saver_icon.webp
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
@@ -69,11 +71,48 @@ jobs:
           '''
               s = s.replace("</application>", provider + "    </application>")
 
-          s = re.sub(r'android:icon="@[^"]+"', 'android:icon="@drawable/sticker_saver_icon"', s, count=1)
-          if 'android:roundIcon=' in s:
-              s = re.sub(r'android:roundIcon="@[^"]+"', 'android:roundIcon="@drawable/sticker_saver_icon"', s, count=1)
+          app_match = re.search(r'<application\\b[^>]*>', s, re.S)
+          if not app_match:
+              raise RuntimeError("Application element not found in AndroidManifest.xml")
+          app_tag = app_match.group(0)
+          if 'android:icon=' in app_tag:
+              app_tag = re.sub(
+                  r'android:icon="[^"]+"',
+                  'android:icon="@mipmap/ic_sticker_saver_launcher"',
+                  app_tag,
+                  count=1,
+              )
           else:
-              s = s.replace("<application", '<application android:roundIcon="@drawable/sticker_saver_icon"', 1)
+              app_tag = app_tag[:-1] + ' android:icon="@mipmap/ic_sticker_saver_launcher">'
+          if 'android:roundIcon=' in app_tag:
+              app_tag = re.sub(
+                  r'android:roundIcon="[^"]+"',
+                  'android:roundIcon="@mipmap/ic_sticker_saver_launcher_round"',
+                  app_tag,
+                  count=1,
+              )
+          else:
+              app_tag = app_tag[:-1] + ' android:roundIcon="@mipmap/ic_sticker_saver_launcher_round">'
+          s = s[:app_match.start()] + app_tag + s[app_match.end():]
+
+          main_activity = re.search(
+              r'<activity\\b[^>]*android:name="(?:\\.MainActivity|com\\.local\\.threadssticker\\.MainActivity)"[^>]*>',
+              s,
+              re.S,
+          )
+          if not main_activity:
+              raise RuntimeError("MainActivity not found in AndroidManifest.xml")
+          activity_tag = main_activity.group(0)
+          if 'android:launchMode=' in activity_tag:
+              activity_tag = re.sub(
+                  r'android:launchMode="[^"]+"',
+                  'android:launchMode="singleTask"',
+                  activity_tag,
+                  count=1,
+              )
+          else:
+              activity_tag = activity_tag[:-1] + ' android:launchMode="singleTask">'
+          s = s[:main_activity.start()] + activity_tag + s[main_activity.end():]
 
           if "android.intent.action.SEND" not in s:
               share_filter = '''
