@@ -148,8 +148,8 @@ jobs:
             echo "::error::Missing Android release signing secrets."
             exit 1
           fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > project/release-keystore.jks
-          keytool -list -keystore project/release-keystore.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > project/app/release-keystore.jks
+          keytool -list -keystore project/app/release-keystore.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
 
       - name: Build signed release APK
         working-directory: project
