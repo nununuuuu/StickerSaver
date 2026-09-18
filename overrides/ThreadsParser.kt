@@ -29,15 +29,21 @@ class ThreadsParser {
         val url = normalizeThreadsUrl(inputUrl)
         val html = fetchHtml(url)
         val doc = Jsoup.parse(html, url)
-        val author = doc.selectFirst("meta[property=og:title]")?.attr("content")
-            ?.substringBefore(" on Threads")
-            ?.takeIf { it.isNotBlank() }
+        val mainPayload = extractMainPostPayload(html)
+        val author = mainPayload?.username
+            ?: doc.selectFirst("meta[property=og:title]")?.attr("content")
+                ?.substringBefore(" on Threads")
+                ?.takeIf { it.isNotBlank() }
 
         val postMedia = if (options.parsePost) {
-            extractMediaFromElement(
-                doc.select("article,[role=article],[data-pressable-container=true]").firstOrNull(),
-                MediaOccurrence(MediaOriginType.POST)
-            ).ifEmpty { extractPageMedia(doc.html(), MediaOccurrence(MediaOriginType.POST)) }
+            extractInlineStickers(mainPayload?.json.orEmpty(), MediaOccurrence(MediaOriginType.POST))
+                .ifEmpty {
+                    extractMediaFromElement(
+                        doc.select("article,[role=article],[data-pressable-container=true]").firstOrNull(),
+                        MediaOccurrence(MediaOriginType.POST)
+                    )
+                }
+                .ifEmpty { extractPageMedia(doc.html(), MediaOccurrence(MediaOriginType.POST)) }
         } else emptyList()
 
         val commentElements = if (options.parseComments) {
@@ -125,16 +131,122 @@ class ThreadsParser {
             .url(url)
             .header(
                 "User-Agent",
-                "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
             )
-            .header("Accept-Language", "zh-TW,zh;q=0.9,en;q=0.7")
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+            )
+            .header("Accept-Language", "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7")
+            .header("Cache-Control", "no-cache")
+            .header("Pragma", "no-cache")
+            .header("Sec-Fetch-Dest", "document")
+            .header("Sec-Fetch-Mode", "navigate")
+            .header("Sec-Fetch-Site", "none")
+            .header("Sec-Fetch-User", "?1")
+            .header("Upgrade-Insecure-Requests", "1")
             .build()
 
         return client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("Threads 回應 " + response.code)
             response.body.string()
         }
+    }
+
+    private data class MainPostPayload(
+        val json: String,
+        val username: String?,
+    )
+
+    private fun extractMainPostPayload(html: String): MainPostPayload? {
+        val preloader = "BarcelonaPostPageTargetQueryRelayPreloader"
+        val start = html.indexOf(preloader, ignoreCase = true)
+        if (start < 0) return null
+
+        val mediaJson = extractFirstJsonObjectForKey(html, "media", start) ?: return null
+        val username = Regex("\\\"username\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+            .find(mediaJson)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.takeIf { it.isNotBlank() }
+
+        return MainPostPayload(
+            json = mediaJson,
+            username = username,
+        )
+    }
+
+    private fun extractInlineStickers(
+        text: String,
+        occurrence: MediaOccurrence,
+    ): List<ParsedMedia> {
+        if (text.isBlank()) return emptyList()
+
+        val urls = Regex("\\\"sticker_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+            .findAll(text)
+            .map { it.groupValues[1] }
+            .map(::decodeStickerJsonValue)
+            .filter(::looksLikeMedia)
+            .distinctBy(::canonicalMediaKey)
+            .toList()
+
+        return urls.map { url ->
+            ParsedMedia(
+                url = url,
+                mimeType = mimeFromUrl(url),
+                occurrence = occurrence,
+            )
+        }
+    }
+
+    private fun decodeStickerJsonValue(value: String): String =
+        value
+            .replace("\\\\/", "/")
+            .replace("\\\\u002F", "/", ignoreCase = true)
+            .replace("\\\\u003A", ":", ignoreCase = true)
+            .replace("\\\\u003D", "=", ignoreCase = true)
+            .replace("\\\\u0026", "&", ignoreCase = true)
+            .replace("\\\\u003F", "?", ignoreCase = true)
+
+    private fun extractFirstJsonObjectForKey(
+        text: String,
+        key: String,
+        startAt: Int,
+    ): String? {
+        val regex = Regex("\\\"" + Regex.escape(key) + "\\\"\\s*:\\s*\\{")
+        val match = regex.find(text, startAt) ?: return null
+        val objectStart = text.indexOf('{', match.range.first)
+        if (objectStart < 0) return null
+
+        var depth = 0
+        var inString = false
+        var escaped = false
+
+        for (i in objectStart until text.length) {
+            val ch = text[i]
+
+            if (inString) {
+                if (escaped) {
+                    escaped = false
+                } else if (ch == '\\\\') {
+                    escaped = true
+                } else if (ch == '"') {
+                    inString = false
+                }
+                continue
+            }
+
+            when (ch) {
+                '"' -> inString = true
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return text.substring(objectStart, i + 1)
+                }
+            }
+        }
+        return null
     }
 
     private fun extractMediaFromElement(
