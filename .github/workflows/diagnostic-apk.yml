@@ -1,0 +1,72 @@
+name: Build Threads Diagnostic APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-diagnostic:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild project and install diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat project.parts/part-* > project.zip.b64
+          base64 --decode project.zip.b64 > project.zip
+          mkdir -p project
+          unzip -q project.zip -d project
+          cp overrides/Models.kt project/app/src/main/java/com/local/threadssticker/Models.kt
+          cp overrides/AppStore.kt project/app/src/main/java/com/local/threadssticker/AppStore.kt
+          cp overrides/StickerRepository.kt project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
+          cp overrides/ThreadsParser.kt project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
+          cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
+          cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
+          cp overrides/app-build.gradle.kts project/app/build.gradle.kts
+          cp diagnostic/DiagnosticActivity.kt project/app/src/main/java/com/local/threadssticker/DiagnosticActivity.kt
+          sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver Diagnostic</string>#' project/app/src/main/res/values/strings.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("project/app/src/main/AndroidManifest.xml")
+          s=p.read_text()
+          if '.MainActivity' not in s:
+              raise SystemExit("MainActivity launcher target not found in manifest")
+          p.write_text(s.replace('.MainActivity', '.DiagnosticActivity'))
+          PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Build diagnostic APK
+        working-directory: project
+        run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Prepare APK
+        run: cp project/app/build/outputs/apk/debug/app-debug.apk StickerSaver-Diagnostic.apk
+
+      - name: Upload diagnostic APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StickerSaver-Diagnostic-apk
+          path: StickerSaver-Diagnostic.apk
+          if-no-files-found: error
