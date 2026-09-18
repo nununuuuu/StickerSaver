@@ -47,86 +47,75 @@ jobs:
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
           python3 - <<'PY'
           from pathlib import Path
-          import re
+          import xml.etree.ElementTree as ET
+
           p = Path("project/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
+          android_ns = "http://schemas.android.com/apk/res/android"
+          A = "{" + android_ns + "}"
+          ET.register_namespace("android", android_ns)
 
-          if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
-              s = s.replace(
-                  "<application",
-                  '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n    <application',
-                  1,
-              )
-
-          if ".fileprovider" not in s:
-              provider = '''        <provider
-                  android:name="androidx.core.content.FileProvider"
-                  android:authorities="${applicationId}.fileprovider"
-                  android:exported="false"
-                  android:grantUriPermissions="true">
-                  <meta-data
-                      android:name="android.support.FILE_PROVIDER_PATHS"
-                      android:resource="@xml/file_paths" />
-              </provider>
-          '''
-              s = s.replace("</application>", provider + "    </application>")
-
-          app_match = re.search(r'<application\\b[^>]*>', s, re.S)
-          if not app_match:
+          tree = ET.parse(p)
+          root = tree.getroot()
+          app = root.find("application")
+          if app is None:
               raise RuntimeError("Application element not found in AndroidManifest.xml")
-          app_tag = app_match.group(0)
-          if 'android:icon=' in app_tag:
-              app_tag = re.sub(
-                  r'android:icon="[^"]+"',
-                  'android:icon="@mipmap/ic_sticker_saver_launcher"',
-                  app_tag,
-                  count=1,
-              )
-          else:
-              app_tag = app_tag[:-1] + ' android:icon="@mipmap/ic_sticker_saver_launcher">'
-          if 'android:roundIcon=' in app_tag:
-              app_tag = re.sub(
-                  r'android:roundIcon="[^"]+"',
-                  'android:roundIcon="@mipmap/ic_sticker_saver_launcher_round"',
-                  app_tag,
-                  count=1,
-              )
-          else:
-              app_tag = app_tag[:-1] + ' android:roundIcon="@mipmap/ic_sticker_saver_launcher_round">'
-          s = s[:app_match.start()] + app_tag + s[app_match.end():]
 
-          main_activity = re.search(
-              r'<activity\\b[^>]*android:name="(?:\\.MainActivity|com\\.local\\.threadssticker\\.MainActivity)"[^>]*>',
-              s,
-              re.S,
-          )
-          if not main_activity:
+          if not any(
+              node.get(A + "name") == "android.permission.REQUEST_INSTALL_PACKAGES"
+              for node in root.findall("uses-permission")
+          ):
+              perm = ET.Element("uses-permission")
+              perm.set(A + "name", "android.permission.REQUEST_INSTALL_PACKAGES")
+              root.insert(0, perm)
+
+          app.set(A + "icon", "@mipmap/ic_sticker_saver_launcher")
+          app.set(A + "roundIcon", "@mipmap/ic_sticker_saver_launcher_round")
+
+          provider = None
+          for node in app.findall("provider"):
+              if node.get(A + "authorities") == "${applicationId}.fileprovider":
+                  provider = node
+                  break
+          if provider is None:
+              provider = ET.SubElement(app, "provider")
+              provider.set(A + "name", "androidx.core.content.FileProvider")
+              provider.set(A + "authorities", "${applicationId}.fileprovider")
+              provider.set(A + "exported", "false")
+              provider.set(A + "grantUriPermissions", "true")
+              meta = ET.SubElement(provider, "meta-data")
+              meta.set(A + "name", "android.support.FILE_PROVIDER_PATHS")
+              meta.set(A + "resource", "@xml/file_paths")
+
+          main = None
+          for activity in app.findall("activity"):
+              name = activity.get(A + "name", "")
+              if name in (".MainActivity", "com.local.threadssticker.MainActivity"):
+                  main = activity
+                  break
+          if main is None:
               raise RuntimeError("MainActivity not found in AndroidManifest.xml")
-          activity_tag = main_activity.group(0)
-          if 'android:launchMode=' in activity_tag:
-              activity_tag = re.sub(
-                  r'android:launchMode="[^"]+"',
-                  'android:launchMode="singleTask"',
-                  activity_tag,
-                  count=1,
-              )
-          else:
-              activity_tag = activity_tag[:-1] + ' android:launchMode="singleTask">'
-          s = s[:main_activity.start()] + activity_tag + s[main_activity.end():]
 
-          if "android.intent.action.SEND" not in s:
-              share_filter = '''
-                  <intent-filter>
-                      <action android:name="android.intent.action.SEND" />
-                      <category android:name="android.intent.category.DEFAULT" />
-                      <data android:mimeType="text/plain" />
-                  </intent-filter>
-              '''
-              m = re.search(r'(<activity\b[^>]*android:name="(?:\.MainActivity|com\.local\.threadssticker\.MainActivity)"[^>]*>)(.*?)(</activity>)', s, re.S)
-              if m:
-                  s = s[:m.start(3)] + share_filter + s[m.start(3):]
+          main.set(A + "launchMode", "singleTask")
 
-          p.write_text(s)
+          has_send = False
+          for intent_filter in main.findall("intent-filter"):
+              for action in intent_filter.findall("action"):
+                  if action.get(A + "name") == "android.intent.action.SEND":
+                      has_send = True
+                      break
+              if has_send:
+                  break
+
+          if not has_send:
+              intent_filter = ET.SubElement(main, "intent-filter")
+              action = ET.SubElement(intent_filter, "action")
+              action.set(A + "name", "android.intent.action.SEND")
+              category = ET.SubElement(intent_filter, "category")
+              category.set(A + "name", "android.intent.category.DEFAULT")
+              data = ET.SubElement(intent_filter, "data")
+              data.set(A + "mimeType", "text/plain")
+
+          tree.write(p, encoding="utf-8", xml_declaration=True)
           PY
 
       - uses: actions/setup-java@v4
