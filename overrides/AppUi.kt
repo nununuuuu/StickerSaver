@@ -202,6 +202,16 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                         modifier = Modifier.heightIn(max = 460.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        info.releaseDate?.let { date ->
+                            item {
+                                Text(
+                                    "更新日期：$date",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Muted
+                                )
+                            }
+                        }
+
                         if (info.features.isNotEmpty()) {
                             item {
                                 Text("新增功能", fontWeight = FontWeight.Bold)
