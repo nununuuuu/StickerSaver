@@ -12,42 +12,29 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rebuild project and install diagnostic
+      - name: Rebuild project with diagnostic UI
         shell: bash
         run: |
           set -euo pipefail
           cat project.parts/part-* > project.zip.b64
           base64 --decode project.zip.b64 > project.zip
+          unzip -t project.zip
           mkdir -p project
           unzip -q project.zip -d project
+
           cp overrides/Models.kt project/app/src/main/java/com/local/threadssticker/Models.kt
           cp overrides/AppStore.kt project/app/src/main/java/com/local/threadssticker/AppStore.kt
           cp overrides/StickerRepository.kt project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
           cp overrides/ThreadsParser.kt project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
-          cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
+          cp diagnostic/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
           cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
-          cp diagnostic/DiagnosticActivity.kt project/app/src/main/java/com/local/threadssticker/DiagnosticActivity.kt
+
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver Diagnostic</string>#' project/app/src/main/res/values/strings.xml
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path("project/app/src/main/AndroidManifest.xml")
-          s=p.read_text()
-          marker = "</application>"
-          activity = """        <activity
-            android:name=".DiagnosticActivity"
-            android:exported="true"
-            android:theme="@style/Theme.ThreadsSticker" />
-"""
-          if marker not in s:
-              raise SystemExit("application element not found in manifest")
-          if '.DiagnosticActivity' not in s:
-              s=s.replace(marker, activity + "    " + marker)
-          p.write_text(s)
-          PY
 
       - uses: actions/setup-java@v4
         with:
@@ -70,6 +57,7 @@ jobs:
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
       - name: Prepare APK
+        shell: bash
         run: cp project/app/build/outputs/apk/debug/app-debug.apk StickerSaver-Diagnostic.apk
 
       - name: Upload diagnostic APK
