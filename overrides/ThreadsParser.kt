@@ -36,16 +36,10 @@ class ThreadsParser {
             ?: doc.selectFirst("meta[property=og:title]")?.attr("content")
                 ?.substringBefore(" on Threads")
                 ?.takeIf { it.isNotBlank() }
+        val postText = mainPayload?.text
 
         val postMedia = if (options.parsePost) {
             extractInlineStickers(mainPayload?.json.orEmpty(), MediaOccurrence(MediaOriginType.POST))
-                .ifEmpty {
-                    extractMediaFromElement(
-                        doc.select("article,[role=article],[data-pressable-container=true]").firstOrNull(),
-                        MediaOccurrence(MediaOriginType.POST)
-                    )
-                }
-                .ifEmpty { extractPageMedia(doc.html(), MediaOccurrence(MediaOriginType.POST)) }
         } else emptyList()
 
         val stickerReplies = if (options.parseComments) {
@@ -72,6 +66,7 @@ class ThreadsParser {
                 ParseResult(
                     sourceUrl = url,
                     author = author,
+                    postText = postText,
                     media = distinct,
                     completedTasks = completedTasks,
                     plannedTasks = plannedTasks,
@@ -124,6 +119,7 @@ class ThreadsParser {
         ParseResult(
             sourceUrl = url,
             author = author,
+            postText = postText,
             media = finalMedia,
             completedTasks = completedTasks,
             plannedTasks = plannedTasks,
@@ -162,6 +158,7 @@ class ThreadsParser {
     private data class MainPostPayload(
         val json: String,
         val username: String?,
+        val text: String?,
     )
 
     private fun extractMainPostPayload(html: String): MainPostPayload? {
@@ -176,9 +173,27 @@ class ThreadsParser {
             ?.getOrNull(1)
             ?.takeIf { it.isNotBlank() }
 
+        val text = runCatching {
+            val media = JSONObject(mediaJson)
+            val fragments = media.optJSONObject("text_post_app_info")
+                ?.optJSONObject("text_fragments")
+                ?.optJSONArray("fragments")
+            buildList {
+                if (fragments != null) {
+                    for (i in 0 until fragments.length()) {
+                        fragments.optJSONObject(i)
+                            ?.optString("plaintext")
+                            ?.takeIf { it.isNotBlank() && it != "□" }
+                            ?.let(::add)
+                    }
+                }
+            }.joinToString("").trim().take(500).takeIf { it.isNotBlank() }
+        }.getOrNull()
+
         return MainPostPayload(
             json = mediaJson,
             username = username,
+            text = text,
         )
     }
 
