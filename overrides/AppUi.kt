@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -704,7 +705,16 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("未分類  " + stickers.count { it.categoryIds.isEmpty() }) },
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("未分類")
+                                    Text(
+                                        " · " + stickers.count { it.categoryIds.isEmpty() } + " 張",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Muted
+                                    )
+                                }
+                            },
                             onClick = {
                                 categoryQuery = ""
                                 uncategorizedOnly = true
@@ -714,7 +724,16 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                         categories.sortedBy { it.name.lowercase() }.forEach { category ->
                             val count = stickers.count { category.id in it.categoryIds }
                             DropdownMenuItem(
-                                text = { Text(category.name + "  " + count) },
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(category.name)
+                                        Text(
+                                            " · " + count + " 張",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Muted
+                                        )
+                                    }
+                                },
                                 onClick = {
                                     categoryQuery = category.name
                                     uncategorizedOnly = false
@@ -772,14 +791,22 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                     Spacer(Modifier.width(5.dp))
                     Text("分類")
                 }
-                OutlinedButton(
+                FilledIconButton(
                     onClick = { batchDeleteConfirm = true },
                     enabled = selectedStickerIds.isNotEmpty(),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = Color(0xFFB3261E),
+                        contentColor = Color.White,
+                        disabledContainerColor = Color(0xFFE6C9C6),
+                        disabledContentColor = Color.White.copy(alpha = .72f)
+                    )
                 ) {
-                    Icon(Icons.Outlined.Delete, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("刪除")
+                    Icon(
+                        Icons.Outlined.Delete,
+                        contentDescription = "刪除所選貼圖",
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         } else {
@@ -863,30 +890,67 @@ private fun BatchCategoryDialog(
 
     AlertDialog(
         onDismissRequest = dismiss,
+        containerColor = Paper,
+        tonalElevation = 0.dp,
         title = { Text("批量編輯分類") },
         text = {
             Column(
                 Modifier.fillMaxWidth().heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = addMode,
-                        onClick = {
-                            addMode = true
-                            selectedCategoryIds = emptySet()
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(0, 2)
-                    ) { Text("新增分類") }
-                    SegmentedButton(
-                        selected = !addMode,
-                        onClick = {
-                            addMode = false
-                            selectedCategoryIds = emptySet()
-                            newCategoryText = ""
-                        },
-                        shape = SegmentedButtonDefaults.itemShape(1, 2)
-                    ) { Text("移除分類") }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable {
+                                addMode = true
+                                selectedCategoryIds = emptySet()
+                            },
+                        shape = RoundedCornerShape(18.dp),
+                        color = if (addMode) WarmSelected else Tile,
+                        border = BorderStroke(1.dp, if (addMode) Accent.copy(alpha = .35f) else Muted.copy(alpha = .45f))
+                    ) {
+                        Row(
+                            Modifier.padding(vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (addMode) {
+                                Icon(Icons.Outlined.Check, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text("新增分類", fontWeight = if (addMode) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable {
+                                addMode = false
+                                selectedCategoryIds = emptySet()
+                                newCategoryText = ""
+                            },
+                        shape = RoundedCornerShape(18.dp),
+                        color = if (!addMode) WarmSelected else Tile,
+                        border = BorderStroke(1.dp, if (!addMode) Accent.copy(alpha = .35f) else Muted.copy(alpha = .45f))
+                    ) {
+                        Row(
+                            Modifier.padding(vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            if (!addMode) {
+                                Icon(Icons.Outlined.Check, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text("移除分類", fontWeight = if (!addMode) FontWeight.SemiBold else FontWeight.Normal)
+                        }
+                    }
                 }
 
                 Text(
@@ -933,8 +997,29 @@ private fun BatchCategoryDialog(
                                     val count = stickers.count {
                                         it.id in selectedStickerIds && category.id in it.categoryIds
                                     }
-                                    Text(category.name + if (!addMode) "  " + count else "")
-                                }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(category.name)
+                                        if (!addMode) {
+                                            Text(
+                                                " · " + count + " 張",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Muted
+                                            )
+                                        }
+                                    }
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = Tile,
+                                    labelColor = Ink,
+                                    selectedContainerColor = WarmSelected,
+                                    selectedLabelColor = Ink
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = category.id in selectedCategoryIds,
+                                    borderColor = Muted.copy(alpha = .45f),
+                                    selectedBorderColor = Accent.copy(alpha = .35f)
+                                )
                             )
                         }
                     }
