@@ -8,12 +8,16 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
 import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 data class UpdateInfo(
     val version: String,
     val releaseUrl: String,
     val apkUrl: String?,
+    val releaseDate: String?,
     val features: List<String>,
     val fixes: List<String>,
 )
@@ -89,6 +93,7 @@ class UpdateChecker(private val context: Context) {
             version = tag,
             releaseUrl = json.optString("html_url"),
             apkUrl = apkUrl,
+            releaseDate = formatReleaseDate(json.optString("published_at")),
             features = parseSection(body, listOf("新增功能", "新功能", "Features", "Added")),
             fixes = parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed")),
         )
@@ -128,6 +133,15 @@ class UpdateChecker(private val context: Context) {
             onProgress(100)
             out
         }
+    }
+
+    private fun formatReleaseDate(raw: String): String? {
+        if (raw.isBlank()) return null
+        return runCatching {
+            val taipei = ZoneId.of("Asia/Taipei")
+            val date = OffsetDateTime.parse(raw).atZoneSameInstant(taipei).toLocalDate()
+            date.format(DateTimeFormatter.ofPattern("yyyy/MM/dd"))
+        }.getOrNull()
     }
 
     private fun parseSection(body: String, headings: List<String>): List<String> {
