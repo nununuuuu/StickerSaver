@@ -7,6 +7,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
 data class UpdateInfo(
@@ -34,14 +35,37 @@ class UpdateChecker(private val context: Context) {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
     }.getOrDefault("0.0.0")
 
+    fun shouldAutoCheck(now: Long = System.currentTimeMillis()): Boolean {
+        if (!autoCheckEnabled) return false
+        val last = prefs.getLong("last_auto_check_at", 0L)
+        return last <= 0L || now - last >= AUTO_CHECK_INTERVAL_MS
+    }
+
+    fun markAutoCheckAttempt(now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("last_auto_check_at", now).apply()
+    }
+
+    fun dismissForToday(version: String) {
+        prefs.edit()
+            .putString("dismissed_version", version)
+            .putString("dismissed_date", LocalDate.now().toString())
+            .apply()
+    }
+
+    fun isDismissedToday(version: String): Boolean {
+        return prefs.getString("dismissed_version", null) == version &&
+            prefs.getString("dismissed_date", null) == LocalDate.now().toString()
+    }
+
     suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
         val request = Request.Builder()
-            .url("https://api.github.com/repos/nununuuuu/thread-gif/releases/latest")
+            .url("https://api.github.com/repos/nununuuuu/StickerSaver/releases/latest")
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "ThreadsSticker/${currentVersion()}")
+            .header("User-Agent", "StickerSaver/\${currentVersion()}")
+            .header("Cache-Control", "no-cache")
             .build()
         val json = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("檢查更新失敗：${response.code}")
+            if (!response.isSuccessful) error("檢查更新失敗：\${response.code}")
             JSONObject(response.body.string())
         }
 
@@ -70,7 +94,6 @@ class UpdateChecker(private val context: Context) {
         )
     }
 
-
     suspend fun downloadApk(
         info: UpdateInfo,
         onProgress: (Int) -> Unit,
@@ -78,15 +101,15 @@ class UpdateChecker(private val context: Context) {
         val url = info.apkUrl ?: error("此版本沒有可下載的 APK")
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "StickerSaver/${currentVersion()}")
+            .header("User-Agent", "StickerSaver/\${currentVersion()}")
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("下載更新失敗：${response.code}")
+            if (!response.isSuccessful) error("下載更新失敗：\${response.code}")
             val body = response.body
             val total = body.contentLength()
             val dir = context.cacheDir.resolve("updates").apply { mkdirs() }
-            val out = dir.resolve("StickerSaver-v${info.version}.apk")
+            val out = dir.resolve("StickerSaver-v\${info.version}.apk")
             body.byteStream().use { input ->
                 out.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
@@ -135,5 +158,9 @@ class UpdateChecker(private val context: Context) {
             if (av != bv) return av.compareTo(bv)
         }
         return 0
+    }
+
+    companion object {
+        const val AUTO_CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L
     }
 }
