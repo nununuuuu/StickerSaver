@@ -41,12 +41,21 @@ class UpdateChecker(private val context: Context) {
 
     fun shouldAutoCheck(now: Long = System.currentTimeMillis()): Boolean {
         if (!autoCheckEnabled) return false
+
+        // 安裝完一個新版本後，立即允許再次檢查。
+        // 這樣同一天若又發布下一版，不會被前一版留下的 6 小時間隔擋住。
+        val checkedAppVersion = prefs.getString("last_checked_app_version", null)
+        if (checkedAppVersion != currentVersion()) return true
+
         val last = prefs.getLong("last_auto_check_at", 0L)
         return last <= 0L || now - last >= AUTO_CHECK_INTERVAL_MS
     }
 
     fun markAutoCheckAttempt(now: Long = System.currentTimeMillis()) {
-        prefs.edit().putLong("last_auto_check_at", now).apply()
+        prefs.edit()
+            .putLong("last_auto_check_at", now)
+            .putString("last_checked_app_version", currentVersion())
+            .apply()
     }
 
     fun dismissForToday(version: String) {
