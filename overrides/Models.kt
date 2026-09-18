@@ -7,7 +7,7 @@ data class ParseOptions(
     val parsePost: Boolean = true,
     val parseComments: Boolean = false,
     val commentLoadMode: CommentLoadMode = CommentLoadMode.TOP,
-    val topCommentCount: Int = 5,
+    val topCommentCount: Int = 20,
 )
 
 data class MediaOccurrence(
@@ -35,6 +35,7 @@ data class SourceRecord(
     val author: String? = null,
     val snapshotPath: String? = null,
     val postText: String? = null,
+    val thumbnailUrl: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastUsedAt: Long? = null,
     val stickerIds: List<String> = emptyList(),
@@ -48,6 +49,8 @@ data class ParseResult(
     val completedTasks: Int,
     val plannedTasks: Int,
     val cancelled: Boolean,
+    val availableCommentCount: Int = 0,
+    val selectedCommentCount: Int = 0,
 ) {
     val postMedia: List<ParsedMedia> get() = media.filter { it.occurrence.type == MediaOriginType.POST }
     val commentMedia: List<ParsedMedia> get() = media.filter { it.occurrence.type == MediaOriginType.COMMENT }
