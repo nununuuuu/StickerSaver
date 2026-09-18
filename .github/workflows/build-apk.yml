@@ -27,6 +27,8 @@ jobs:
           mkdir -p project
           unzip -q project.zip -d project
 
+          cp overrides/ThreadsParser.kt project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
+
           sed -i 's/compileSdk = 37/compileSdk = 36/g' project/app/build.gradle.kts
           sed -i 's/targetSdk = 37/targetSdk = 36/g' project/app/build.gradle.kts
           sed -i 's/compose-bom:2026.08.00/compose-bom:2025.08.00/g' project/app/build.gradle.kts
