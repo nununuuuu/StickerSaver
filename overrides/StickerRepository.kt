@@ -29,13 +29,13 @@ class StickerRepository(private val context: Context) {
             options = options,
             isCancellationRequested = { cancelRequested.get() },
             onTaskCompleted = { partial, progress ->
-                mergeParsedMedia(partial.sourceUrl, partial.author, partial.media)
+                mergeParsedMedia(partial.sourceUrl, partial.author, partial.postText, partial.media)
                 onProgress(progress)
             }
         )
     }
 
-    private fun mergeParsedMedia(sourceUrl: String, author: String?, media: List<ParsedMedia>) {
+    private fun mergeParsedMedia(sourceUrl: String, author: String?, postText: String?, media: List<ParsedMedia>) {
         val stickerList = _stickers.value.toMutableList()
         val ids = mutableListOf<String>()
 
@@ -71,6 +71,7 @@ class StickerRepository(private val context: Context) {
         val old = sourceList.firstOrNull { it.id == sourceId }
         val replacement = (old ?: SourceRecord(id = sourceId, url = sourceUrl)).copy(
             author = author ?: old?.author,
+            postText = postText ?: old?.postText,
             stickerIds = (old?.stickerIds.orEmpty() + ids).distinct(),
         )
 
@@ -114,6 +115,17 @@ class StickerRepository(private val context: Context) {
 
         publish(updatedStickers, updatedSources)
         return file
+    }
+
+
+    fun removeSticker(stickerId: String) {
+        val target = _stickers.value.firstOrNull { it.id == stickerId } ?: return
+        target.localCachePath?.let { runCatching { File(it).delete() } }
+        val stickers = _stickers.value.filterNot { it.id == stickerId }
+        val sources = _sources.value.map { source ->
+            if (stickerId in source.stickerIds) source.copy(stickerIds = source.stickerIds - stickerId) else source
+        }
+        publish(stickers, sources)
     }
 
     fun clearStickerCache() {
