@@ -77,7 +77,7 @@ private fun AndroidWebView(onReady: (WebView) -> Unit, onLog: (String) -> Unit) 
                               });
                               const keys=['giphy_media_info','media_type','image_versions2','video_versions','carousel_media','media_overlay_info','giphy.com','media.giphy.com'];
                               const counts={};
-                              keys.forEach(k=>counts[k]=(html.toLowerCase().match(new RegExp(k.toLowerCase().replace(/[.*+?^${}()|[\\]\\]/g,'\\$&'),'g'))||[]).length);
+                              keys.forEach(k=>counts[k]=(html.toLowerCase().match(new RegExp(k.toLowerCase(),'g'))||[]).length);
                               return JSON.stringify({title:document.title,htmlLength:html.length,mediaElements:urls.length,counts:counts,candidates:urls.filter(u=>/giphy|gif|webp|fbcdn|cdninstagram|scontent/i.test(u)).slice(0,80)});
                             })();
                         """.trimIndent()
