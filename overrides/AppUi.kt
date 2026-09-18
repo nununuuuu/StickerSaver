@@ -697,12 +697,25 @@ private fun Settings(repo: StickerRepository, checker: UpdateChecker, found: (Up
     var about by remember { mutableStateOf(false) }
     var clear by remember { mutableStateOf(false) }
     var size by remember { mutableLongStateOf(repo.cacheSizeBytes()) }
+    val prefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+    var clipboardMonitor by remember { mutableStateOf(prefs.getBoolean("clipboard_monitor", false)) }
 
     Column(Modifier.fillMaxSize()) {
-        Header("設定", "鍵盤、快取與版本")
+        Header("設定", "鍵盤、剪貼簿、快取與版本")
         SettingRow("鍵盤", "啟用 Sticker Saver 鍵盤", Icons.Outlined.Keyboard) {
             context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
+        Spacer(Modifier.height(10.dp))
+        SettingSwitchRow(
+            title = "監聽剪貼簿",
+            sub = "App 使用中偵測 Threads 連結並詢問是否貼入",
+            icon = Icons.Outlined.ContentPaste,
+            checked = clipboardMonitor,
+            onChecked = {
+                clipboardMonitor = it
+                prefs.edit().putBoolean("clipboard_monitor", it).apply()
+            }
+        )
         Spacer(Modifier.height(10.dp))
         SettingRow("貼圖快取", formatBytes(size), Icons.Outlined.Storage) { clear = true }
         Spacer(Modifier.height(10.dp))
@@ -792,6 +805,37 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
         },
         confirmButton = { TextButton(onClick = dismiss) { Text("完成") } }
     )
+}
+
+@Composable
+private fun SettingSwitchRow(
+    title: String,
+    sub: String,
+    icon: ImageVector,
+    checked: Boolean,
+    onChecked: (Boolean) -> Unit,
+) {
+    Surface(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = Tile
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null)
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold)
+                Text(sub, style = MaterialTheme.typography.bodySmall, color = Muted)
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = onChecked,
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = Accent
+                )
+            )
+        }
+    }
 }
 
 @Composable
