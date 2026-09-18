@@ -2,8 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: write
@@ -18,6 +16,7 @@ jobs:
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       SIGNING_KEYSTORE_PATH: release-keystore.jks
+
     steps:
       - uses: actions/checkout@v4
 
@@ -28,113 +27,36 @@ jobs:
           cat project.parts/part-* > project.zip.b64
           base64 --decode project.zip.b64 > project.zip
           unzip -t project.zip
+          rm -rf project
           mkdir -p project
           unzip -q project.zip -d project
-          cp overrides/Models.kt project/app/src/main/java/com/local/threadssticker/Models.kt
-          cp overrides/AppStore.kt project/app/src/main/java/com/local/threadssticker/AppStore.kt
-          cp overrides/StickerRepository.kt project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
-          cp overrides/ThreadsParser.kt project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
-          cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
-          cp overrides/MainActivity.kt project/app/src/main/java/com/local/threadssticker/MainActivity.kt
-          cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
-          cp overrides/app-build.gradle.kts project/app/build.gradle.kts
-          mkdir -p project/app/src/main/res/drawable
-          mkdir -p project/app/src/main/res/values
-          mkdir -p project/app/src/main/res/mipmap-anydpi-v26
-          mkdir -p project/app/src/main/res/xml
-          cp overrides/resources/drawable/ic_sticker_saver_foreground.xml project/app/src/main/res/drawable/ic_sticker_saver_foreground.xml
-          cp overrides/resources/values/sticker_saver_icon.xml project/app/src/main/res/values/sticker_saver_icon.xml
-          cp overrides/resources/mipmap-anydpi-v26/ic_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          cp overrides/resources/mipmap-anydpi-v26/ic_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
-          cp overrides/resources/mipmap-anydpi-v26/ic_sticker_saver_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_sticker_saver_launcher.xml
-          cp overrides/resources/mipmap-anydpi-v26/ic_sticker_saver_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_sticker_saver_launcher_round.xml
-          cp overrides/resources/xml/file_paths.xml project/app/src/main/res/xml/file_paths.xml
-          base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > project/app/src/main/res/drawable/sticker_saver_icon.jpg
-          sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
 
-          p = Path("project/app/src/main/AndroidManifest.xml")
-          android_ns = "http://schemas.android.com/apk/res/android"
-          A = "{" + android_ns + "}"
-          ET.register_namespace("android", android_ns)
-
-          tree = ET.parse(p)
-          root = tree.getroot()
-          app = root.find("application")
-          if app is None:
-              raise RuntimeError("Application element not found in AndroidManifest.xml")
-
-          if not any(
-              node.get(A + "name") == "android.permission.REQUEST_INSTALL_PACKAGES"
-              for node in root.findall("uses-permission")
-          ):
-              perm = ET.Element("uses-permission")
-              perm.set(A + "name", "android.permission.REQUEST_INSTALL_PACKAGES")
-              root.insert(0, perm)
-
-          app.set(A + "label", "Sticker Saver")
-          app.set(A + "icon", "@mipmap/ic_sticker_saver_launcher")
-          app.set(A + "roundIcon", "@mipmap/ic_sticker_saver_launcher_round")
-
-          provider = None
-          for node in app.findall("provider"):
-              if node.get(A + "authorities") == "${applicationId}.fileprovider":
-                  provider = node
-                  break
-          if provider is None:
-              provider = ET.SubElement(app, "provider")
-              provider.set(A + "name", "androidx.core.content.FileProvider")
-              provider.set(A + "authorities", "${applicationId}.fileprovider")
-              provider.set(A + "exported", "false")
-              provider.set(A + "grantUriPermissions", "true")
-              meta = ET.SubElement(provider, "meta-data")
-              meta.set(A + "name", "android.support.FILE_PROVIDER_PATHS")
-              meta.set(A + "resource", "@xml/file_paths")
-
-          main = None
-          for activity in app.findall("activity"):
-              name = activity.get(A + "name", "")
-              if name in (".MainActivity", "com.local.threadssticker.MainActivity"):
-                  main = activity
-                  break
-          if main is None:
-              raise RuntimeError("MainActivity not found in AndroidManifest.xml")
-
-          main.set(A + "launchMode", "singleTask")
-          main.set(A + "label", "Sticker Saver")
-          main.set(A + "icon", "@mipmap/ic_sticker_saver_launcher")
-
-          has_send = False
-          for intent_filter in main.findall("intent-filter"):
-              for action in intent_filter.findall("action"):
-                  if action.get(A + "name") == "android.intent.action.SEND":
-                      has_send = True
-                      break
-              if has_send:
-                  break
-
-          if not has_send:
-              intent_filter = ET.SubElement(main, "intent-filter")
-              action = ET.SubElement(intent_filter, "action")
-              action.set(A + "name", "android.intent.action.SEND")
-              category = ET.SubElement(intent_filter, "category")
-              category.set(A + "name", "android.intent.category.DEFAULT")
-              data = ET.SubElement(intent_filter, "data")
-              data.set(A + "mimeType", "text/plain")
-
-          tree.write(p, encoding="utf-8", xml_declaration=True)
-          PY
-
-      - name: Dump reconstructed Android metadata
+      - name: Apply maintained project sources
         shell: bash
         run: |
-          echo "=== BASE MANIFEST ==="
-          cat project/app/src/main/AndroidManifest.xml
-          echo
-          echo "=== BASE STRINGS ==="
-          cat project/app/src/main/res/values/strings.xml
+          set -euo pipefail
+
+          JAVA_DIR="project/app/src/main/java/com/local/threadssticker"
+          RES_DIR="project/app/src/main/res"
+
+          cp overrides/Models.kt "$JAVA_DIR/Models.kt"
+          cp overrides/AppStore.kt "$JAVA_DIR/AppStore.kt"
+          cp overrides/StickerRepository.kt "$JAVA_DIR/StickerRepository.kt"
+          cp overrides/ThreadsParser.kt "$JAVA_DIR/ThreadsParser.kt"
+          cp overrides/AppUi.kt "$JAVA_DIR/AppUi.kt"
+          cp overrides/MainActivity.kt "$JAVA_DIR/MainActivity.kt"
+          cp overrides/UpdateChecker.kt "$JAVA_DIR/UpdateChecker.kt"
+          cp overrides/app-build.gradle.kts project/app/build.gradle.kts
+
+          cp overrides/AndroidManifest.xml project/app/src/main/AndroidManifest.xml
+
+          mkdir -p "$RES_DIR/drawable" "$RES_DIR/values" "$RES_DIR/mipmap-anydpi-v26" "$RES_DIR/xml"
+          cp overrides/resources/values/strings.xml "$RES_DIR/values/strings.xml"
+          cp overrides/resources/values/sticker_saver_icon.xml "$RES_DIR/values/sticker_saver_icon.xml"
+          cp overrides/resources/mipmap-anydpi-v26/ic_launcher.xml "$RES_DIR/mipmap-anydpi-v26/ic_launcher.xml"
+          cp overrides/resources/mipmap-anydpi-v26/ic_launcher_round.xml "$RES_DIR/mipmap-anydpi-v26/ic_launcher_round.xml"
+          cp overrides/resources/xml/file_paths.xml "$RES_DIR/xml/file_paths.xml"
+          base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > "$RES_DIR/drawable/sticker_saver_icon.jpg"
 
       - uses: actions/setup-java@v4
         with:
@@ -163,40 +85,29 @@ jobs:
             exit 1
           fi
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > project/app/release-keystore.jks
-          keytool -list -keystore project/app/release-keystore.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          keytool -list             -keystore project/app/release-keystore.jks             -storepass "$ANDROID_KEYSTORE_PASSWORD"             -alias "$ANDROID_KEY_ALIAS" >/dev/null
 
       - name: Build signed release APK
         working-directory: project
         run: gradle --no-daemon :app:assembleRelease --stacktrace
 
-      - name: Verify release APK signature
-        shell: bash
-        run: |
-          set -euo pipefail
-          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
-          "$APKSIGNER" verify --verbose --print-certs project/app/build/outputs/apk/release/app-release.apk
-
-      - name: Verify final APK branding
+      - name: Verify release APK
         shell: bash
         run: |
           set -euo pipefail
           APK="project/app/build/outputs/apk/release/app-release.apk"
-          APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
           AAPT2="$ANDROID_HOME/build-tools/36.0.0/aapt2"
 
-          "$APKANALYZER" manifest print "$APK" > final-manifest.xml
-          echo "=== final manifest branding ==="
-          grep -E 'android:(label|icon|roundIcon)=' final-manifest.xml || true
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
 
-          echo "=== packaged Sticker Saver resources ==="
-          "$AAPT2" dump resources "$APK" | grep -E 'ic_sticker_saver_launcher|sticker_saver_icon' | head -40
+          BADGING="$("$AAPT2" dump badging "$APK")"
+          RESOURCES="$("$AAPT2" dump resources "$APK")"
 
-          echo "=== launcher badging ==="
-          "$AAPT2" dump badging "$APK" | grep -E "^application-label|^application-icon|^launchable-activity" || true
-
-          grep -F 'android:label="Sticker Saver"' final-manifest.xml >/dev/null
-          "$AAPT2" dump resources "$APK" | grep -F 'ic_sticker_saver_launcher' >/dev/null
-          "$AAPT2" dump resources "$APK" | grep -F 'sticker_saver_icon' >/dev/null
+          echo "$BADGING" | grep -F "application-label:'Sticker Saver'"
+          echo "$BADGING" | grep -F "launchable-activity: name='com.local.threadssticker.MainActivity'  label='Sticker Saver'"
+          echo "$RESOURCES" | grep -F "mipmap/ic_launcher"
+          echo "$RESOURCES" | grep -F "drawable/sticker_saver_icon"
 
       - name: Read version and prepare APK
         id: version
