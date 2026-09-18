@@ -589,9 +589,11 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, stickers: List<StickerItem>) {
     var editing by remember { mutableStateOf<SourceRecord?>(null) }
+    var deleting by remember { mutableStateOf<SourceRecord?>(null) }
 
     Column(Modifier.fillMaxSize()) {
         Header("來源紀錄", "保留你貼入的 Threads 貼文與備註")
@@ -605,7 +607,12 @@ private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, sticke
                 items(sources.size) { i ->
                     val source = sources[i]
                     val related = stickers.filter { it.id in source.stickerIds }
-                    PostSourceCard(source, related) { editing = source }
+                    PostSourceCard(
+                        source = source,
+                        related = related,
+                        onEditNote = { editing = source },
+                        onDelete = { deleting = source },
+                    )
                 }
             }
         }
@@ -626,12 +633,53 @@ private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, sticke
             dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
         )
     }
+
+    deleting?.let { source ->
+        val count = stickers.count { it.sourceUrl == source.url || it.id in source.stickerIds }
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("刪除這筆來源？") },
+            text = {
+                Text(
+                    if (count > 0) {
+                        "會同時刪除這篇來源與其 $count 張貼圖及本機快取。"
+                    } else {
+                        "會刪除這篇來源紀錄。"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    repo.removeSource(source.id)
+                    deleting = null
+                }) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) { Text("取消") }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PostSourceCard(source: SourceRecord, related: List<StickerItem>, click: () -> Unit) {
+private fun PostSourceCard(
+    source: SourceRecord,
+    related: List<StickerItem>,
+    onEditNote: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val context = LocalContext.current
+    var expanded by remember(source.id) { mutableStateOf(false) }
+    val hasPostText = !source.postText.isNullOrBlank()
+
     Card(
-        Modifier.fillMaxWidth().clickable(onClick = click),
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(
+                onClick = {},
+                onLongClick = onDelete,
+            ),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = WarmCard),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -642,6 +690,7 @@ private fun PostSourceCard(source: SourceRecord, related: List<StickerItem>, cli
                     ?: related.firstOrNull()?.localCachePath?.let(::File)
                     ?: related.firstOrNull()?.mediaUrl
                     ?: source.snapshotPath?.let(::File)
+
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = Tile,
@@ -659,9 +708,13 @@ private fun PostSourceCard(source: SourceRecord, related: List<StickerItem>, cli
                         }
                     }
                 }
+
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(source.author?.let { "@$it" } ?: "Threads 貼文", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        source.author?.let { "@$it" } ?: "Threads 貼文",
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Text(
                         source.url,
                         style = MaterialTheme.typography.bodySmall,
@@ -670,16 +723,41 @@ private fun PostSourceCard(source: SourceRecord, related: List<StickerItem>, cli
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Text(related.size.toString() + " 張", style = MaterialTheme.typography.bodySmall, color = Muted)
+
+                Text(
+                    related.size.toString() + " 張",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Muted
+                )
             }
 
-            source.postText?.takeIf { it.isNotBlank() }?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            if (hasPostText) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    IconButton(onClick = { expanded = !expanded }) {
+                        Icon(
+                            imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                            contentDescription = if (expanded) "收合貼文文字" else "展開貼文文字",
+                            tint = Muted
+                        )
+                    }
+                }
+                if (expanded) {
+                    Text(
+                        text = source.postText.orEmpty(),
+                        modifier = Modifier.padding(bottom = 4.dp),
+                        color = Ink,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
 
             if (related.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     related.take(3).forEach { sticker ->
                         Surface(
@@ -708,9 +786,68 @@ private fun PostSourceCard(source: SourceRecord, related: List<StickerItem>, cli
                 }
             }
 
-            if (source.note.isNotBlank()) {
-                Spacer(Modifier.height(10.dp))
-                Text(source.note, color = Muted, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (source.note.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier.clickable(onClick = onEditNote),
+                        shape = RoundedCornerShape(12.dp),
+                        color = WarmSelected
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Outlined.EditNote,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = Accent
+                            )
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                source.note,
+                                color = Ink,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } else {
+                    TextButton(onClick = onEditNote) {
+                        Icon(Icons.Outlined.EditNote, null, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("新增備註")
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse(source.url))
+                            )
+                        }.onFailure {
+                            Toast.makeText(context, "無法開啟來源網址", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp)
+                ) {
+                    Text("前往")
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        Icons.Outlined.OpenInNew,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
