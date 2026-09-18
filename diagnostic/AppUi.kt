@@ -17,24 +17,18 @@ import java.util.concurrent.TimeUnit
 
 private const val TEST_URL = "https://www.threads.com/@ethanzhang688/post/DdYPqUdAXes"
 
-private data class HeaderProfile(
-    val name: String,
-    val userAgent: String,
-    val extraHeaders: Map<String, String> = emptyMap(),
-)
-
 @Composable
 fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
-    var log by remember { mutableStateOf("準備測試 DdYPqUdAXes\n") }
+    var log by remember { mutableStateOf("已確認 Profile C 可取得 Threads preload JSON。\n這版只驗證「主貼文」物件能否準確切出。\n") }
     var running by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Sticker Saver · HTTP A/B Diagnostic", style = MaterialTheme.typography.titleLarge)
+            Text("Sticker Saver · Main Post Diagnostic", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Text(
-                "不使用 Jina、不使用 WebView。一次比較 4 組 HTTP headers，找出哪組能拿到 Threads 的 inline_sticker preload JSON。",
+                "使用已成功的 Desktop + Sec-Fetch headers，定位 BarcelonaPostPageTargetQueryRelayPreloader 的 result.data.media，只抓主貼文 inline stickers。",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(12.dp))
@@ -43,9 +37,9 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
                 onClick = {
                     if (running) return@Button
                     running = true
-                    log = "開始 A/B 測試…\n"
+                    log = "開始抓取主貼文資料…\n"
                     scope.launch {
-                        runCatching { runHeaderAbDiagnostic(TEST_URL) }
+                        runCatching { runMainPostDiagnostic(TEST_URL) }
                             .onSuccess { log = it }
                             .onFailure { e ->
                                 log = "診斷失敗\n" +
@@ -63,68 +57,24 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
                     Spacer(Modifier.width(8.dp))
                     Text("測試中…")
                 } else {
-                    Text("開始 4 組 HTTP 測試")
+                    Text("測試主貼文 Sticker")
                 }
             }
 
             Spacer(Modifier.height(12.dp))
             Text(
                 text = log,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 style = MaterialTheme.typography.bodySmall
             )
         }
     }
 }
 
-private suspend fun runHeaderAbDiagnostic(url: String): String = withContext(Dispatchers.IO) {
-    val mobileUa =
-        "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
-
+private suspend fun runMainPostDiagnostic(url: String): String = withContext(Dispatchers.IO) {
     val desktopUa =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-
-    val profiles = listOf(
-        HeaderProfile(
-            name = "A. Android Mobile Chrome",
-            userAgent = mobileUa,
-        ),
-        HeaderProfile(
-            name = "B. Windows Desktop Chrome",
-            userAgent = desktopUa,
-        ),
-        HeaderProfile(
-            name = "C. Desktop + Sec-Fetch",
-            userAgent = desktopUa,
-            extraHeaders = mapOf(
-                "Sec-Fetch-Dest" to "document",
-                "Sec-Fetch-Mode" to "navigate",
-                "Sec-Fetch-Site" to "none",
-                "Sec-Fetch-User" to "?1",
-                "Upgrade-Insecure-Requests" to "1",
-            )
-        ),
-        HeaderProfile(
-            name = "D. Desktop + Browser-like headers",
-            userAgent = desktopUa,
-            extraHeaders = mapOf(
-                "Sec-Fetch-Dest" to "document",
-                "Sec-Fetch-Mode" to "navigate",
-                "Sec-Fetch-Site" to "none",
-                "Sec-Fetch-User" to "?1",
-                "Upgrade-Insecure-Requests" to "1",
-                "Sec-CH-UA" to "\"Chromium\";v=\"140\", \"Google Chrome\";v=\"140\", \"Not=A?Brand\";v=\"24\"",
-                "Sec-CH-UA-Mobile" to "?0",
-                "Sec-CH-UA-Platform" to "\"Windows\"",
-                "Accept-Encoding" to "gzip, deflate, br",
-            )
-        )
-    )
 
     val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -132,94 +82,123 @@ private suspend fun runHeaderAbDiagnostic(url: String): String = withContext(Dis
         .followRedirects(true)
         .build()
 
-    buildString {
-        appendLine("Target: " + url)
-        appendLine()
+    val request = Request.Builder()
+        .url(url)
+        .header("User-Agent", desktopUa)
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+        )
+        .header("Accept-Language", "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7")
+        .header("Cache-Control", "no-cache")
+        .header("Pragma", "no-cache")
+        .header("Sec-Fetch-Dest", "document")
+        .header("Sec-Fetch-Mode", "navigate")
+        .header("Sec-Fetch-Site", "none")
+        .header("Sec-Fetch-User", "?1")
+        .header("Upgrade-Insecure-Requests", "1")
+        .build()
 
-        profiles.forEach { profile ->
-            appendLine("===== " + profile.name + " =====")
+    client.newCall(request).execute().use { response ->
+        val body = response.body.string()
+        val preloaderKey = "BarcelonaPostPageTargetQueryRelayPreloader"
+        val preloaderIndex = body.indexOf(preloaderKey, ignoreCase = true)
 
-            try {
-                val builder = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", profile.userAgent)
-                    .header(
-                        "Accept",
-                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
-                    )
-                    .header("Accept-Language", "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7")
-                    .header("Cache-Control", "no-cache")
-                    .header("Pragma", "no-cache")
+        val mediaObject = if (preloaderIndex >= 0) {
+            extractFirstJsonObjectForKey(body, "media", preloaderIndex)
+        } else null
 
-                profile.extraHeaders.forEach { (k, v) -> builder.header(k, v) }
+        val rawUrls = mediaObject?.let {
+            Regex("\\\"sticker_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .findAll(it)
+                .map { m -> m.groupValues[1] }
+                .toList()
+        }.orEmpty()
 
-                client.newCall(builder.build()).execute().use { response ->
-                    val body = response.body.string()
+        val rawIds = mediaObject?.let {
+            Regex("\\\"sticker_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .findAll(it)
+                .map { m -> m.groupValues[1] }
+                .toList()
+        }.orEmpty()
 
-                    val relayCount = Regex("RelayPrefetchedStreamCache", RegexOption.IGNORE_CASE)
-                        .findAll(body).count()
-                    val preloaderCount = Regex(
-                        "BarcelonaPostPageTargetQueryRelayPreloader",
-                        RegexOption.IGNORE_CASE
-                    ).findAll(body).count()
-                    val textFragmentsCount = Regex("text_fragments", RegexOption.IGNORE_CASE)
-                        .findAll(body).count()
-                    val inlineCount = Regex("inline_sticker_fragment", RegexOption.IGNORE_CASE)
-                        .findAll(body).count()
-                    val typeCount = Regex(
-                        "\\\"fragment_type\\\"\\s*:\\s*\\\"inline_sticker\\\""
-                    ).findAll(body).count()
+        fun decode(value: String): String = value
+            .replace("\\\\/", "/")
+            .replace("\\\\u002F", "/", ignoreCase = true)
+            .replace("\\\\u003A", ":", ignoreCase = true)
+            .replace("\\\\u003D", "=", ignoreCase = true)
+            .replace("\\\\u0026", "&", ignoreCase = true)
 
-                    val rawUrls = Regex(
-                        "\\\"sticker_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\""
-                    ).findAll(body).map { it.groupValues[1] }.toList()
+        val urls = rawUrls.map(::decode).distinct()
+        val ids = rawIds.distinct()
 
-                    val rawIds = Regex(
-                        "\\\"sticker_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\""
-                    ).findAll(body).map { it.groupValues[1] }.toList()
+        val username = mediaObject?.let {
+            Regex("\\\"username\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .find(it)?.groupValues?.getOrNull(1)
+        }
+        val mediaPk = mediaObject?.let {
+            Regex("\\\"pk\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+                .find(it)?.groupValues?.getOrNull(1)
+        }
 
-                    fun decode(value: String): String = value
-                        .replace("\\\\/", "/")
-                        .replace("\\\\u002F", "/", ignoreCase = true)
-                        .replace("\\\\u003A", ":", ignoreCase = true)
-                        .replace("\\\\u003D", "=", ignoreCase = true)
-                        .replace("\\\\u0026", "&", ignoreCase = true)
-
-                    val urls = rawUrls.map(::decode).distinct()
-                    val ids = rawIds.distinct()
-
-                    appendLine("HTTP: " + response.code)
-                    appendLine("Final URL: " + response.request.url)
-                    appendLine("Content-Type: " + (response.header("Content-Type") ?: "(none)"))
-                    appendLine("HTML chars: " + body.length)
-                    appendLine("RelayPrefetchedStreamCache: " + relayCount)
-                    appendLine("Barcelona preloader: " + preloaderCount)
-                    appendLine("text_fragments: " + textFragmentsCount)
-                    appendLine("inline_sticker_fragment: " + inlineCount)
-                    appendLine("fragment_type=inline_sticker: " + typeCount)
-                    appendLine("sticker_id: " + ids.size)
-                    appendLine("sticker_url: " + urls.size)
-                    appendLine("contains giphy.com: " + body.contains("giphy.com", ignoreCase = true))
-
-                    if (urls.isNotEmpty()) {
-                        appendLine("RESULT: SUCCESS")
-                        urls.take(6).forEachIndexed { index, stickerUrl ->
-                            val id = ids.getOrNull(index)
-                            appendLine(
-                                "#" + (index + 1) +
-                                    (id?.let { " id=" + it } ?: "")
-                            )
-                            appendLine(stickerUrl)
-                        }
-                    } else {
-                        appendLine("RESULT: NO STICKER DATA")
-                    }
-                }
-            } catch (e: Exception) {
-                appendLine("ERROR: " + (e.message ?: e::class.simpleName ?: "unknown"))
-            }
-
+        buildString {
+            appendLine("HTTP: " + response.code)
+            appendLine("HTML chars: " + body.length)
+            appendLine("Preloader found: " + (preloaderIndex >= 0))
+            appendLine("Main media object found: " + (mediaObject != null))
+            appendLine("Main media chars: " + (mediaObject?.length ?: 0))
+            appendLine("username: " + (username ?: "(not found)"))
+            appendLine("media pk: " + (mediaPk ?: "(not found)"))
+            appendLine("main sticker_id: " + ids.size)
+            appendLine("main sticker_url: " + urls.size)
             appendLine()
+
+            if (urls.isNotEmpty()) {
+                appendLine("RESULT: MAIN POST SUCCESS")
+                urls.take(40).forEachIndexed { index, stickerUrl ->
+                    appendLine("#" + (index + 1) + (ids.getOrNull(index)?.let { " id=" + it } ?: ""))
+                    appendLine(stickerUrl)
+                }
+            } else {
+                appendLine("RESULT: MAIN POST NOT ISOLATED")
+                appendLine("Need a different JSON-path selector.")
+            }
         }
     }
+}
+
+private fun extractFirstJsonObjectForKey(text: String, key: String, startAt: Int): String? {
+    val regex = Regex("\\\"" + Regex.escape(key) + "\\\"\\s*:\\s*\\{")
+    val match = regex.find(text, startAt) ?: return null
+    val objectStart = text.indexOf('{', match.range.first)
+    if (objectStart < 0) return null
+
+    var depth = 0
+    var inString = false
+    var escaped = false
+
+    for (i in objectStart until text.length) {
+        val ch = text[i]
+
+        if (inString) {
+            if (escaped) {
+                escaped = false
+            } else if (ch == '\\') {
+                escaped = true
+            } else if (ch == '"') {
+                inString = false
+            }
+            continue
+        }
+
+        when (ch) {
+            '"' -> inString = true
+            '{' -> depth++
+            '}' -> {
+                depth--
+                if (depth == 0) return text.substring(objectStart, i + 1)
+            }
+        }
+    }
+    return null
 }
