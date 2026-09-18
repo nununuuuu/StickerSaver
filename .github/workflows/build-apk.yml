@@ -53,10 +53,10 @@ jobs:
           mkdir -p "$RES_DIR/drawable" "$RES_DIR/values" "$RES_DIR/mipmap-anydpi-v26" "$RES_DIR/xml"
           cp overrides/resources/values/strings.xml "$RES_DIR/values/strings.xml"
           cp overrides/resources/values/sticker_saver_icon.xml "$RES_DIR/values/sticker_saver_icon.xml"
+          cp overrides/resources/drawable/ic_launcher_foreground.xml "$RES_DIR/drawable/ic_launcher_foreground.xml"
           cp overrides/resources/mipmap-anydpi-v26/ic_launcher.xml "$RES_DIR/mipmap-anydpi-v26/ic_launcher.xml"
           cp overrides/resources/mipmap-anydpi-v26/ic_launcher_round.xml "$RES_DIR/mipmap-anydpi-v26/ic_launcher_round.xml"
           cp overrides/resources/xml/file_paths.xml "$RES_DIR/xml/file_paths.xml"
-          base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > "$RES_DIR/drawable/sticker_saver_icon.jpg"
 
       - uses: actions/setup-java@v4
         with:
@@ -107,7 +107,7 @@ jobs:
           echo "$BADGING" | grep -F "application-label:'Sticker Saver'"
           echo "$BADGING" | grep -F "launchable-activity: name='com.local.threadssticker.MainActivity'  label='Sticker Saver'"
           echo "$RESOURCES" | grep -F "mipmap/ic_launcher"
-          echo "$RESOURCES" | grep -F "drawable/sticker_saver_icon"
+          echo "$RESOURCES" | grep -F "drawable/ic_launcher_foreground"
 
       - name: Read version and prepare APK
         id: version
