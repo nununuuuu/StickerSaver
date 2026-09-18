@@ -722,7 +722,9 @@ private fun PostSourceCard(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = {},
+                onClick = {
+                    if (hasPostText) expanded = !expanded
+                },
                 onLongClick = onDelete,
             ),
         shape = RoundedCornerShape(22.dp),
@@ -776,29 +778,14 @@ private fun PostSourceCard(
                 )
             }
 
-            if (hasPostText) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    IconButton(onClick = { expanded = !expanded }) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
-                            contentDescription = if (expanded) "收合貼文文字" else "展開貼文文字",
-                            tint = Muted
-                        )
-                    }
-                }
-                if (expanded) {
-                    Text(
-                        text = source.postText.orEmpty(),
-                        modifier = Modifier.padding(bottom = 4.dp),
-                        color = Ink,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+            if (hasPostText && expanded) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = source.postText.orEmpty(),
+                    modifier = Modifier.padding(bottom = 4.dp),
+                    color = Ink,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
 
             if (related.isNotEmpty()) {
