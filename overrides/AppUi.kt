@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -55,7 +56,7 @@ private enum class LibraryTab { RECENT, FREQUENT, ALL }
 private enum class CategoryDelimiter { PLUS, SLASH, SPACE }
 
 @Composable
-fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedClipboardText: String?) {
+fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedClipboardText: String?, resumeToken: Int) {
     val repo = (activity.application as StickerApplication).repository
     val stickers by repo.stickers.collectAsState()
     val sources by repo.sources.collectAsState()
@@ -92,9 +93,24 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (checker.autoCheckEnabled) {
-            runCatching { checker.check() }.onSuccess { update = it }.onFailure { error = it.message }
+    LaunchedEffect(resumeToken) {
+        if (checker.shouldAutoCheck()) {
+            delay(2500)
+            var info: UpdateInfo? = null
+            var success = false
+            repeat(2) { attempt ->
+                val result = runCatching { checker.check() }
+                if (result.isSuccess) {
+                    info = result.getOrNull()
+                    success = true
+                    return@repeat
+                }
+                if (attempt == 0) delay(2000)
+            }
+            checker.markAutoCheckAttempt()
+            if (success && info != null && !checker.isDismissedToday(info!!.version)) {
+                update = info
+            }
         }
     }
 
@@ -262,7 +278,12 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                 },
                 dismissButton = {
                     if (!updateDownloading) {
-                        TextButton(onClick = { update = null }) { Text("取消") }
+                        TextButton(
+                            onClick = {
+                                checker.dismissForToday(info.version)
+                                update = null
+                            }
+                        ) { Text("取消") }
                     }
                 },
                 confirmButton = {
@@ -429,17 +450,35 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         FilterChip(
                             selected = categoryDelimiter == CategoryDelimiter.PLUS,
                             onClick = { if (!loading) categoryDelimiter = CategoryDelimiter.PLUS },
-                            label = { Text("+") }
+                            label = { Text("+") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Tile,
+                                labelColor = Ink,
+                                selectedContainerColor = WarmSelected,
+                                selectedLabelColor = Ink
+                            )
                         )
                         FilterChip(
                             selected = categoryDelimiter == CategoryDelimiter.SLASH,
                             onClick = { if (!loading) categoryDelimiter = CategoryDelimiter.SLASH },
-                            label = { Text("/") }
+                            label = { Text("/") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Tile,
+                                labelColor = Ink,
+                                selectedContainerColor = WarmSelected,
+                                selectedLabelColor = Ink
+                            )
                         )
                         FilterChip(
                             selected = categoryDelimiter == CategoryDelimiter.SPACE,
                             onClick = { if (!loading) categoryDelimiter = CategoryDelimiter.SPACE },
-                            label = { Text("空白") }
+                            label = { Text("空白") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Tile,
+                                labelColor = Ink,
+                                selectedContainerColor = WarmSelected,
+                                selectedLabelColor = Ink
+                            )
                         )
                     }
                     parseCategoryNames(categoryText, categoryDelimiter).takeIf { it.isNotEmpty() }?.let { names ->
