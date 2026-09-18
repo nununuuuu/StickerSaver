@@ -43,7 +43,7 @@ jobs:
           cp overrides/resources/mipmap-anydpi-v26/ic_sticker_saver_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_sticker_saver_launcher.xml
           cp overrides/resources/mipmap-anydpi-v26/ic_sticker_saver_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_sticker_saver_launcher_round.xml
           cp overrides/resources/xml/file_paths.xml project/app/src/main/res/xml/file_paths.xml
-          base64 --decode overrides/resources/sticker_saver_icon.webp.b64 > project/app/src/main/res/drawable/sticker_saver_icon.webp
+          base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > project/app/src/main/res/drawable/sticker_saver_icon.jpg
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
           python3 - <<'PY'
           from pathlib import Path
