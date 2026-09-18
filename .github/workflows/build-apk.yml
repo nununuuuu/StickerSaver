@@ -31,6 +31,7 @@ jobs:
           cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
           cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
+          sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
 
       - uses: actions/setup-java@v4
         with:
@@ -58,13 +59,13 @@ jobs:
         run: |
           VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' project/app/build.gradle.kts)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          cp project/app/build/outputs/apk/debug/app-debug.apk "ThreadsSticker-v${VERSION}.apk"
+          cp project/app/build/outputs/apk/debug/app-debug.apk "StickerSaver-v${VERSION}.apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ThreadsSticker-v${{ steps.version.outputs.version }}-apk
-          path: ThreadsSticker-v${{ steps.version.outputs.version }}.apk
+          name: StickerSaver-v${{ steps.version.outputs.version }}-apk
+          path: StickerSaver-v${{ steps.version.outputs.version }}.apk
           if-no-files-found: error
 
       - name: Publish versioned release
@@ -74,7 +75,7 @@ jobs:
         shell: bash
         run: |
           TAG="v${VERSION}"
-          APK="ThreadsSticker-v${VERSION}.apk"
+          APK="StickerSaver-v${VERSION}.apk"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
             gh release edit "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md
