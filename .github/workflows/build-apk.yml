@@ -12,9 +12,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Rebuild project archive
+        shell: bash
         run: |
+          set -euo pipefail
           cat project.parts/part-* > project.zip.b64
-          base64 -d project.zip.b64 > project.zip
+          base64 --decode project.zip.b64 > project.zip
           unzip -t project.zip
           mkdir -p project
           unzip -q project.zip -d project
@@ -26,19 +28,18 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK
-        run: sdkmanager "platforms;android-37" "build-tools;36.0.0"
+      - name: Install Android SDK packages
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.6.0'
+          gradle-version: '9.0.0'
 
       - name: Build debug APK
         working-directory: project
         run: gradle --no-daemon :app:assembleDebug --stacktrace
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: ThreadsSticker-debug-apk
           path: project/app/build/outputs/apk/debug/app-debug.apk
