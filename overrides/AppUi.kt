@@ -168,7 +168,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                     Tab.HOME -> Home(activity, repo, stickers, pendingInput)
                     Tab.LIBRARY -> Library(repo, stickers)
                     Tab.SOURCES -> Sources(repo, sources, stickers)
-                    Tab.SETTINGS -> Settings(checker, { update = it }, { error = it })
+                    Tab.SETTINGS -> Settings(repo, checker, { update = it }, { error = it })
                 }
             }
         }
@@ -358,10 +358,9 @@ private fun RowScope.nav(tab: Tab, selected: Tab, icon: ImageVector, text: Strin
 }
 
 @Composable
-private fun Header(title: String, sub: String) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+private fun Header(title: String) {
+    Box(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
         Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(sub, color = Muted)
     }
 }
 
@@ -424,7 +423,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
     }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
-        item { Header("Sticker Saver", "貼上 Threads 連結並選擇解析範圍") }
+        item { Header("Sticker Saver") }
         item {
             Card(
                 Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
@@ -609,6 +608,18 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
     var uncategorizedOnly by remember { mutableStateOf(false) }
     var categoryMenu by remember { mutableStateOf(false) }
 
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedStickerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var batchCategoryDialog by remember { mutableStateOf(false) }
+    var batchDeleteConfirm by remember { mutableStateOf(false) }
+
+    fun leaveSelectionMode() {
+        selectionMode = false
+        selectedStickerIds = emptySet()
+        batchCategoryDialog = false
+        batchDeleteConfirm = false
+    }
+
     fun filtered(base: List<StickerItem>): List<StickerItem> {
         if (uncategorizedOnly) return base.filter { it.categoryIds.isEmpty() }
         val query = categoryQuery.trim()
@@ -635,62 +646,82 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("貼圖庫", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("最新、常用與全部貼圖", color = Muted)
-            }
-            Box(Modifier.widthIn(min = 150.dp, max = 200.dp)) {
-                OutlinedTextField(
-                    value = if (uncategorizedOnly) "未分類" else categoryQuery,
-                    onValueChange = {
-                        uncategorizedOnly = false
-                        categoryQuery = it
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("分類篩選") },
-                    trailingIcon = {
-                        IconButton(onClick = { categoryMenu = !categoryMenu }) {
-                            Icon(Icons.Outlined.ArrowDropDown, contentDescription = "分類清單")
-                        }
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = Muted
-                    )
+            Text(
+                if (selectionMode) "已選 " + selectedStickerIds.size + " 張" else "貼圖庫",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+
+            IconButton(
+                onClick = {
+                    if (selectionMode) leaveSelectionMode()
+                    else {
+                        selectionMode = true
+                        selectedStickerIds = emptySet()
+                    }
+                }
+            ) {
+                Icon(
+                    if (selectionMode) Icons.Outlined.Close else Icons.Outlined.Edit,
+                    contentDescription = if (selectionMode) "結束批量編輯" else "批量編輯"
                 )
-                DropdownMenu(
-                    expanded = categoryMenu,
-                    onDismissRequest = { categoryMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("全部") },
-                        onClick = {
-                            categoryQuery = ""
+            }
+
+            if (!selectionMode) {
+                Box(Modifier.widthIn(min = 140.dp, max = 180.dp)) {
+                    OutlinedTextField(
+                        value = if (uncategorizedOnly) "未分類" else categoryQuery,
+                        onValueChange = {
                             uncategorizedOnly = false
-                            categoryMenu = false
-                        }
+                            categoryQuery = it
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("分類篩選") },
+                        trailingIcon = {
+                            IconButton(onClick = { categoryMenu = !categoryMenu }) {
+                                Icon(Icons.Outlined.ArrowDropDown, contentDescription = "分類清單")
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent,
+                            unfocusedBorderColor = Muted
+                        )
                     )
-                    DropdownMenuItem(
-                        text = { Text("未分類  " + stickers.count { it.categoryIds.isEmpty() }) },
-                        onClick = {
-                            categoryQuery = ""
-                            uncategorizedOnly = true
-                            categoryMenu = false
-                        }
-                    )
-                    categories.sortedBy { it.name.lowercase() }.forEach { category ->
-                        val count = stickers.count { category.id in it.categoryIds }
+                    DropdownMenu(
+                        expanded = categoryMenu,
+                        onDismissRequest = { categoryMenu = false }
+                    ) {
                         DropdownMenuItem(
-                            text = { Text(category.name + "  " + count) },
+                            text = { Text("全部") },
                             onClick = {
-                                categoryQuery = category.name
+                                categoryQuery = ""
                                 uncategorizedOnly = false
                                 categoryMenu = false
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("未分類  " + stickers.count { it.categoryIds.isEmpty() }) },
+                            onClick = {
+                                categoryQuery = ""
+                                uncategorizedOnly = true
+                                categoryMenu = false
+                            }
+                        )
+                        categories.sortedBy { it.name.lowercase() }.forEach { category ->
+                            val count = stickers.count { category.id in it.categoryIds }
+                            DropdownMenuItem(
+                                text = { Text(category.name + "  " + count) },
+                                onClick = {
+                                    categoryQuery = category.name
+                                    uncategorizedOnly = false
+                                    categoryMenu = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -710,7 +741,50 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                 scope.launch { pagerState.animateScrollToPage(2) }
             }
         }
-        Spacer(Modifier.height(12.dp))
+
+        if (selectionMode) {
+            val shownNow = listFor(selected)
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val shownIds = shownNow.map { it.id }.toSet()
+                        selectedStickerIds = if (shownIds.isNotEmpty() && shownIds.all { it in selectedStickerIds }) {
+                            selectedStickerIds - shownIds
+                        } else {
+                            selectedStickerIds + shownIds
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("全選")
+                }
+                Button(
+                    onClick = { batchCategoryDialog = true },
+                    enabled = selectedStickerIds.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                ) {
+                    Icon(Icons.Outlined.Label, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("分類")
+                }
+                OutlinedButton(
+                    onClick = { batchDeleteConfirm = true },
+                    enabled = selectedStickerIds.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Outlined.Delete, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("刪除")
+                }
+            }
+        } else {
+            Spacer(Modifier.height(12.dp))
+        }
 
         HorizontalPager(
             state = pagerState,
@@ -720,10 +794,183 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
             if (shown.isEmpty()) {
                 Empty("沒有符合條件的貼圖")
             } else {
-                StickerGrid(repo, shown, Modifier.fillMaxSize())
+                StickerGrid(
+                    repo = repo,
+                    list = shown,
+                    modifier = Modifier.fillMaxSize(),
+                    selectionMode = selectionMode,
+                    selectedIds = selectedStickerIds,
+                    onSelectionChange = { id, selectedNow ->
+                        selectedStickerIds = if (selectedNow) selectedStickerIds + id
+                        else selectedStickerIds - id
+                    }
+                )
             }
         }
     }
+
+    if (batchCategoryDialog) {
+        BatchCategoryDialog(
+            repo = repo,
+            selectedStickerIds = selectedStickerIds,
+            dismiss = { batchCategoryDialog = false },
+            done = {
+                batchCategoryDialog = false
+                leaveSelectionMode()
+            }
+        )
+    }
+
+    if (batchDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { batchDeleteConfirm = false },
+            title = { Text("刪除所選貼圖？") },
+            text = { Text("將刪除 " + selectedStickerIds.size + " 張貼圖與其本機快取。分類本身不會在這裡刪除。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    repo.removeStickers(selectedStickerIds)
+                    leaveSelectionMode()
+                }) {
+                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { batchDeleteConfirm = false }) { Text("取消") }
+            }
+        )
+    }
+}
+
+@Composable
+private fun BatchCategoryDialog(
+    repo: StickerRepository,
+    selectedStickerIds: Set<String>,
+    dismiss: () -> Unit,
+    done: () -> Unit,
+) {
+    val categories by repo.categories.collectAsState()
+    val stickers by repo.stickers.collectAsState()
+    var addMode by remember { mutableStateOf(true) }
+    var selectedCategoryIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var newCategoryText by remember { mutableStateOf("") }
+
+    val usedBySelection = remember(stickers, selectedStickerIds) {
+        stickers
+            .filter { it.id in selectedStickerIds }
+            .flatMap { it.categoryIds }
+            .toSet()
+    }
+
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("批量編輯分類") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 520.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = addMode,
+                        onClick = {
+                            addMode = true
+                            selectedCategoryIds = emptySet()
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2)
+                    ) { Text("新增分類") }
+                    SegmentedButton(
+                        selected = !addMode,
+                        onClick = {
+                            addMode = false
+                            selectedCategoryIds = emptySet()
+                            newCategoryText = ""
+                        },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2)
+                    ) { Text("移除分類") }
+                }
+
+                Text(
+                    if (addMode) "將選擇的分類加入全部 " + selectedStickerIds.size + " 張貼圖"
+                    else "從所選貼圖移除指定分類；沒有該分類的貼圖不受影響",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Muted
+                )
+
+                if (addMode) {
+                    OutlinedTextField(
+                        value = newCategoryText,
+                        onValueChange = { newCategoryText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("新增分類名稱") },
+                        placeholder = { Text("可用 + 分隔多個分類") }
+                    )
+                }
+
+                val shownCategories = if (addMode) categories else categories.filter { it.id in usedBySelection }
+                if (shownCategories.isEmpty()) {
+                    Text(
+                        if (addMode) "目前沒有既有分類，也可以直接輸入新分類"
+                        else "所選貼圖目前沒有可移除的分類",
+                        color = Muted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 260.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(shownCategories.size, key = { shownCategories[it].id }) { index ->
+                            val category = shownCategories[index]
+                            FilterChip(
+                                selected = category.id in selectedCategoryIds,
+                                onClick = {
+                                    selectedCategoryIds =
+                                        if (category.id in selectedCategoryIds) selectedCategoryIds - category.id
+                                        else selectedCategoryIds + category.id
+                                },
+                                label = {
+                                    val count = stickers.count {
+                                        it.id in selectedStickerIds && category.id in it.categoryIds
+                                    }
+                                    Text(category.name + if (!addMode) "  " + count else "")
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (addMode) {
+                        val newNames = newCategoryText
+                            .split('+')
+                            .map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .distinctBy { it.lowercase() }
+                        repo.addCategoriesToStickers(
+                            selectedStickerIds,
+                            selectedCategoryIds,
+                            newNames
+                        )
+                    } else {
+                        repo.removeCategoriesFromStickers(
+                            selectedStickerIds,
+                            selectedCategoryIds
+                        )
+                    }
+                    done()
+                },
+                enabled = selectedCategoryIds.isNotEmpty() || (addMode && newCategoryText.isNotBlank()),
+                colors = ButtonDefaults.buttonColors(containerColor = Accent)
+            ) { Text("套用") }
+        },
+        dismissButton = {
+            TextButton(onClick = dismiss) { Text("取消") }
+        }
+    )
 }
 
 @Composable
@@ -741,7 +988,14 @@ private fun RowScope.LibraryFilter(text: String, selected: Boolean, click: () ->
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifier: Modifier) {
+private fun StickerGrid(
+    repo: StickerRepository,
+    list: List<StickerItem>,
+    modifier: Modifier,
+    selectionMode: Boolean = false,
+    selectedIds: Set<String> = emptySet(),
+    onSelectionChange: (String, Boolean) -> Unit = { _, _ -> },
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val categories by repo.categories.collectAsState()
@@ -755,45 +1009,73 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(list, key = { it.id }) { sticker ->
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = Tile,
-                modifier = Modifier
-                    .aspectRatio(1f)
-                    .combinedClickable(
-                        onClick = {
-                            scope.launch {
-                                runCatching {
-                                    val file = repo.markUsedAndCache(sticker.id)
-                                    val uri = FileProvider.getUriForFile(
-                                        context,
-                                        context.packageName + ".fileprovider",
-                                        file
-                                    )
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newUri(context.contentResolver, "Sticker", uri))
-                                }.onSuccess {
-                                    Toast.makeText(context, "已複製貼圖", Toast.LENGTH_SHORT).show()
-                                }.onFailure {
-                                    Toast.makeText(context, "複製失敗：" + (it.message ?: "未知錯誤"), Toast.LENGTH_SHORT).show()
+            val selected = sticker.id in selectedIds
+            Box {
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (selected) WarmSelected else Tile,
+                    modifier = Modifier
+                        .aspectRatio(1f)
+                        .combinedClickable(
+                            onClick = {
+                                if (selectionMode) {
+                                    onSelectionChange(sticker.id, !selected)
+                                } else {
+                                    scope.launch {
+                                        runCatching {
+                                            val file = repo.markUsedAndCache(sticker.id)
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                context.packageName + ".fileprovider",
+                                                file
+                                            )
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            clipboard.setPrimaryClip(ClipData.newUri(context.contentResolver, "Sticker", uri))
+                                        }.onSuccess {
+                                            Toast.makeText(context, "已複製貼圖", Toast.LENGTH_SHORT).show()
+                                        }.onFailure {
+                                            Toast.makeText(context, "複製失敗：" + (it.message ?: "未知錯誤"), Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
                                 }
+                            },
+                            onLongClick = {
+                                if (selectionMode) onSelectionChange(sticker.id, !selected)
+                                else editTarget = sticker
                             }
-                        },
-                        onLongClick = { editTarget = sticker }
+                        )
+                ) {
+                    AsyncImage(
+                        sticker.localCachePath?.let(::File) ?: sticker.mediaUrl,
+                        contentDescription = "貼圖",
+                        modifier = Modifier.fillMaxSize().padding(6.dp)
                     )
-            ) {
-                AsyncImage(
-                    sticker.localCachePath?.let(::File) ?: sticker.mediaUrl,
-                    contentDescription = "貼圖",
-                    modifier = Modifier.fillMaxSize().padding(6.dp)
-                )
+                }
+                if (selectionMode) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (selected) Accent else Paper.copy(alpha = .92f),
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(24.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            if (selected) {
+                                Icon(
+                                    Icons.Outlined.Check,
+                                    contentDescription = "已選取",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 
     editTarget?.let { target ->
         val fresh = repo.stickers.collectAsState().value.firstOrNull { it.id == target.id } ?: target
-        var selectedIds by remember(fresh.id, fresh.categoryIds) { mutableStateOf(fresh.categoryIds.toSet()) }
+        var selectedIdsLocal by remember(fresh.id, fresh.categoryIds) { mutableStateOf(fresh.categoryIds.toSet()) }
         var newCategoryText by remember(fresh.id) { mutableStateOf("") }
         var pendingNewNames by remember(fresh.id) { mutableStateOf<List<String>>(emptyList()) }
 
@@ -809,7 +1091,7 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
             names.forEach { name ->
                 val existing = categories.firstOrNull { it.name.equals(name, ignoreCase = true) }
                 if (existing != null) {
-                    selectedIds = selectedIds + existing.id
+                    selectedIdsLocal = selectedIdsLocal + existing.id
                 } else if (pendingNewNames.none { it.equals(name, ignoreCase = true) }) {
                     pendingNewNames = pendingNewNames + name
                 }
@@ -839,7 +1121,7 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
                     Text("分類", fontWeight = FontWeight.SemiBold)
 
                     val assignedCategories = categories
-                        .filter { it.id in selectedIds }
+                        .filter { it.id in selectedIdsLocal }
                         .sortedBy { it.name.lowercase() }
 
                     if (assignedCategories.isEmpty() && pendingNewNames.isEmpty()) {
@@ -857,7 +1139,7 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
                                 val category = assignedCategories[index]
                                 InputChip(
                                     selected = true,
-                                    onClick = { selectedIds = selectedIds - category.id },
+                                    onClick = { selectedIdsLocal = selectedIdsLocal - category.id },
                                     label = { Text(category.name) },
                                     trailingIcon = {
                                         Icon(
@@ -885,7 +1167,7 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
                                     trailingIcon = {
                                         Icon(
                                             Icons.Outlined.Close,
-                                            contentDescription = "刪除新增分類",
+                                            contentDescription = "移除新增分類",
                                             modifier = Modifier.size(16.dp)
                                         )
                                     },
@@ -920,7 +1202,7 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
                         }
                     }
                     Text(
-                        "只顯示這張貼圖自己的分類；點分類標籤上的 × 可移除。",
+                        "只顯示這張貼圖自己的分類；點分類標籤上的 × 可從這張貼圖移除。",
                         color = Muted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -941,7 +1223,7 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
                         if (newCategoryText.isNotBlank()) addCategoryFromInput()
                         repo.updateStickerCategories(
                             fresh.id,
-                            selectedIds.toList(),
+                            selectedIdsLocal.toList(),
                             pendingNewNames
                         )
                         editTarget = null
@@ -980,7 +1262,7 @@ private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, sticke
     var deleting by remember { mutableStateOf<SourceRecord?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        Header("來源紀錄", "保留你貼入的 Threads 貼文與備註")
+        Header("來源紀錄")
         if (sources.isEmpty()) {
             Empty("還沒有來源紀錄")
         } else {
@@ -1225,14 +1507,20 @@ private fun PostSourceCard(
 }
 
 @Composable
-private fun Settings(checker: UpdateChecker, found: (UpdateInfo) -> Unit, failed: (String) -> Unit) {
+private fun Settings(
+    repo: StickerRepository,
+    checker: UpdateChecker,
+    found: (UpdateInfo) -> Unit,
+    failed: (String) -> Unit
+) {
     val context = LocalContext.current
     var about by remember { mutableStateOf(false) }
+    var categoryManager by remember { mutableStateOf(false) }
     val prefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
     var clipboardMonitor by remember { mutableStateOf(prefs.getBoolean("clipboard_monitor", false)) }
 
     Column(Modifier.fillMaxSize()) {
-        Header("設定", "鍵盤、剪貼簿與版本")
+        Header("設定")
         SettingRow("鍵盤", "啟用 Sticker Saver 鍵盤", Icons.Outlined.Keyboard) {
             context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
@@ -1248,10 +1536,167 @@ private fun Settings(checker: UpdateChecker, found: (UpdateInfo) -> Unit, failed
             }
         )
         Spacer(Modifier.height(10.dp))
+        SettingRow("分類標籤管理", "新增、重新命名或刪除分類", Icons.Outlined.Label) {
+            categoryManager = true
+        }
+        Spacer(Modifier.height(10.dp))
         SettingRow("關於", "版本 " + checker.currentVersion(), Icons.Outlined.Info) { about = true }
     }
 
+    if (categoryManager) {
+        CategoryManagerDialog(repo = repo, dismiss = { categoryManager = false })
+    }
     if (about) About(checker, { about = false }, found, failed)
+}
+
+@Composable
+private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) {
+    val categories by repo.categories.collectAsState()
+    val stickers by repo.stickers.collectAsState()
+    var newName by remember { mutableStateOf("") }
+    var renameTarget by remember { mutableStateOf<StickerCategory?>(null) }
+    var deleteTarget by remember { mutableStateOf<StickerCategory?>(null) }
+
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("分類標籤管理") },
+        text = {
+            Column(
+                Modifier.fillMaxWidth().heightIn(max = 540.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("新增分類") }
+                    )
+                    Button(
+                        onClick = {
+                            repo.ensureCategories(listOf(newName))
+                            newName = ""
+                        },
+                        enabled = newName.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    ) { Text("新增") }
+                }
+
+                if (categories.isEmpty()) {
+                    Text("目前沒有分類標籤", color = Muted)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 390.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(categories.sortedBy { it.name.lowercase() }.size) { index ->
+                            val category = categories.sortedBy { it.name.lowercase() }[index]
+                            val count = stickers.count { category.id in it.categoryIds }
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = Tile,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(50),
+                                        color = WarmSelected
+                                    ) {
+                                        Text(
+                                            category.name,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(count.toString(), color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    Spacer(Modifier.weight(1f))
+                                    IconButton(onClick = { renameTarget = category }) {
+                                        Icon(Icons.Outlined.Edit, contentDescription = "重新命名分類")
+                                    }
+                                    IconButton(onClick = { deleteTarget = category }) {
+                                        Icon(
+                                            Icons.Outlined.Delete,
+                                            contentDescription = "刪除分類",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = dismiss) { Text("完成") }
+        }
+    )
+
+    renameTarget?.let { category ->
+        var value by remember(category.id) { mutableStateOf(category.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("重新命名分類") },
+            text = {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        repo.renameCategory(category.id, value)
+                        renameTarget = null
+                    },
+                    enabled = value.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                ) { Text("儲存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+            }
+        )
+    }
+
+    deleteTarget?.let { category ->
+        val count = stickers.count { category.id in it.categoryIds }
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("刪除「" + category.name + "」？") },
+            text = {
+                Text(
+                    if (count > 0) {
+                        "這個分類目前用於 " + count + " 張貼圖。刪除後會從這些貼圖移除分類標籤，但貼圖本身不會被刪除。"
+                    } else {
+                        "將永久刪除此分類標籤。貼圖本身不會被刪除。"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    repo.deleteCategory(category.id)
+                    deleteTarget = null
+                }) {
+                    Text("刪除分類", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+            }
+        )
+    }
 }
 
 @Composable
