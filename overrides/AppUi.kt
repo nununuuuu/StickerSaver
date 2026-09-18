@@ -863,6 +863,36 @@ private fun Empty(text: String) {
     }
 }
 
+private fun extractThreadsUrl(text: String): String? =
+    Regex(
+        "https?://(?:www\\.)?(?:threads\\.com|threads\\.net)/[^\\s]+",
+        RegexOption.IGNORE_CASE
+    ).find(text)?.value?.trimEnd('.', ',', ')', ']', '}')
+
+private fun installDownloadedApk(context: Context, file: File) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+        !context.packageManager.canRequestPackageInstalls()
+    ) {
+        val intent = Intent(
+            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+            Uri.parse("package:" + context.packageName)
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        Toast.makeText(context, "請允許 Sticker Saver 安裝更新，返回後再按「安裝」", Toast.LENGTH_LONG).show()
+        return
+    }
+
+    val uri = FileProvider.getUriForFile(
+        context,
+        context.packageName + ".fileprovider",
+        file
+    )
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, "application/vnd.android.package-archive")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+}
+
 private fun formatBytes(bytes: Long): String = when {
     bytes >= 1073741824L -> "%.1f GB".format(bytes / 1073741824.0)
     bytes >= 1048576L -> "%.1f MB".format(bytes / 1048576.0)
