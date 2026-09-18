@@ -29,6 +29,7 @@ jobs:
           cp overrides/StickerRepository.kt project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
           cp overrides/ThreadsParser.kt project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
           cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
+          cp overrides/MainActivity.kt project/app/src/main/java/com/local/threadssticker/MainActivity.kt
           cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
           mkdir -p project/app/src/main/res/drawable
@@ -43,8 +44,17 @@ jobs:
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path("project/app/src/main/AndroidManifest.xml")
           s = p.read_text()
+
+          if "android.permission.REQUEST_INSTALL_PACKAGES" not in s:
+              s = s.replace(
+                  "<application",
+                  '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n    <application',
+                  1,
+              )
+
           if ".fileprovider" not in s:
               provider = '''        <provider
                   android:name="androidx.core.content.FileProvider"
@@ -57,6 +67,19 @@ jobs:
               </provider>
           '''
               s = s.replace("</application>", provider + "    </application>")
+
+          if "android.intent.action.SEND" not in s:
+              share_filter = '''
+                  <intent-filter>
+                      <action android:name="android.intent.action.SEND" />
+                      <category android:name="android.intent.category.DEFAULT" />
+                      <data android:mimeType="text/plain" />
+                  </intent-filter>
+              '''
+              m = re.search(r'(<activity\b[^>]*android:name="(?:\.MainActivity|com\.local\.threadssticker\.MainActivity)"[^>]*>)(.*?)(</activity>)', s, re.S)
+              if m:
+                  s = s[:m.start(3)] + share_filter + s[m.start(3):]
+
           p.write_text(s)
           PY
 
