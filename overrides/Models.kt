@@ -17,6 +17,12 @@ data class MediaOccurrence(
     val commentText: String? = null,
 )
 
+data class StickerCategory(
+    val id: String,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 data class StickerItem(
     val id: String,
     val sourceUrl: String,
@@ -26,6 +32,7 @@ data class StickerItem(
     val useCount: Int = 0,
     val lastUsedAt: Long? = null,
     val occurrences: List<MediaOccurrence> = emptyList(),
+    val categoryIds: List<String> = emptyList(),
 )
 
 data class SourceRecord(
