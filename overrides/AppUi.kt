@@ -185,30 +185,75 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
                 onDismissRequest = { if (!updateDownloading) update = null },
                 title = { Text("發現新版本 v" + info.version) },
                 text = {
-                    Column {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 460.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         if (info.features.isNotEmpty()) {
-                            Text("新功能", fontWeight = FontWeight.Bold)
-                            info.features.forEach { Text("• " + it) }
-                            Spacer(Modifier.height(8.dp))
+                            item {
+                                Text("新增功能", fontWeight = FontWeight.Bold)
+                            }
+                            items(info.features.size) { index ->
+                                Text("• " + info.features[index])
+                            }
                         }
+
                         if (info.fixes.isNotEmpty()) {
-                            Text("修正", fontWeight = FontWeight.Bold)
-                            info.fixes.forEach { Text("• " + it) }
-                            Spacer(Modifier.height(8.dp))
+                            item {
+                                Spacer(Modifier.height(2.dp))
+                                Text("修正項目", fontWeight = FontWeight.Bold)
+                            }
+                            items(info.fixes.size) { index ->
+                                Text("• " + info.fixes[index])
+                            }
                         }
+
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = Color(0xFFFFE1E1),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            Icons.Outlined.WarningAmber,
+                                            contentDescription = null,
+                                            tint = Color(0xFF9B1C1C)
+                                        )
+                                        Spacer(Modifier.width(7.dp))
+                                        Text(
+                                            "重要提醒",
+                                            color = Color(0xFF8A1717),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Spacer(Modifier.height(5.dp))
+                                    Text(
+                                        "更新期間請勿關閉 Sticker Saver。首次切換到固定正式簽章版本時，舊版需要先解除安裝一次；之後即可直接在 App 內原地更新。",
+                                        color = Color(0xFF8A1717),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+
                         if (updateDownloading || downloadedApk != null) {
-                            LinearProgressIndicator(
-                                progress = { updateProgress / 100f },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = Accent,
-                                trackColor = WarmSelected
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                if (downloadedApk != null) "下載完成，準備安裝"
-                                else "下載中 $updateProgress%",
-                                style = MaterialTheme.typography.bodySmall
-                            )
+                            item {
+                                Spacer(Modifier.height(4.dp))
+                                LinearProgressIndicator(
+                                    progress = { updateProgress / 100f },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = Accent,
+                                    trackColor = WarmSelected
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    if (downloadedApk != null) "下載完成，準備安裝"
+                                    else "下載中 $updateProgress%",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
                         }
                     }
                 },
