@@ -279,14 +279,23 @@ class ThreadsParser {
             .find(url)?.groupValues?.getOrNull(1)
         val shortcode = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
 
+        // A Threads comment/reply permalink is also /@user/post/<shortcode>.
+        // Resolve the exact permalink payload first, even when text_post_app_info.is_reply = true.
+        // Otherwise filtering to non-replies can accidentally select the parent post and import
+        // every sticker from the parent instead of only the selected comment.
+        if (shortcode.isNotBlank()) {
+            payloads.firstOrNull {
+                it.code.equals(shortcode, ignoreCase = true)
+            }?.let { return it }
+        }
+
         val candidates = payloads.filter { !it.isReply }
         if (candidates.isEmpty()) return null
 
         return candidates.maxByOrNull { payload ->
             var score = 0
-            if (!shortcode.isBlank()) {
-                if (payload.code.equals(shortcode, ignoreCase = true)) score += 1000
-                if (payload.raw.contains(shortcode, ignoreCase = true)) score += 500
+            if (!shortcode.isBlank() && payload.raw.contains(shortcode, ignoreCase = true)) {
+                score += 500
             }
             if (!handle.isNullOrBlank() && payload.username.equals(handle, ignoreCase = true)) {
                 score += 200
