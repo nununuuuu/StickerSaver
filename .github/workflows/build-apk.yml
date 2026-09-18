@@ -2,6 +2,8 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 permissions:
   contents: write
@@ -27,9 +29,9 @@ jobs:
 
           cp overrides/Models.kt project/app/src/main/java/com/local/threadssticker/Models.kt
           cp overrides/AppStore.kt project/app/src/main/java/com/local/threadssticker/AppStore.kt
-          cp overrides/StickerRepository.kt project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
-          cp overrides/ThreadsParser.kt project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
-          cp overrides/AppUi.kt project/app/src/main/java/com/local/threadssticker/AppUi.kt
+          base64 --decode overrides/StickerRepository.kt.b64 > project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
+          base64 --decode overrides/ThreadsParser.kt.b64 > project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
+          base64 --decode overrides/AppUi.kt.b64 | gzip --decompress > project/app/src/main/java/com/local/threadssticker/AppUi.kt
           cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
 
@@ -52,3 +54,33 @@ jobs:
       - name: Build debug APK
         working-directory: project
         run: gradle --no-daemon :app:assembleDebug --stacktrace
+
+      - name: Read version and prepare APK
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' project/app/build.gradle.kts)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          cp project/app/build/outputs/apk/debug/app-debug.apk "ThreadsSticker-v${VERSION}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ThreadsSticker-v${{ steps.version.outputs.version }}-apk
+          path: ThreadsSticker-v${{ steps.version.outputs.version }}.apk
+          if-no-files-found: error
+
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          TAG="v${VERSION}"
+          APK="ThreadsSticker-v${VERSION}.apk"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+            gh release edit "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md
+          else
+            gh release create "$TAG" "$APK" --title "$TAG" --notes-file RELEASE_NOTES.md
+          fi
