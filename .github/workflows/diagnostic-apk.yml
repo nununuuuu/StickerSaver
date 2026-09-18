@@ -36,9 +36,17 @@ jobs:
           from pathlib import Path
           p=Path("project/app/src/main/AndroidManifest.xml")
           s=p.read_text()
-          if '.MainActivity' not in s:
-              raise SystemExit("MainActivity launcher target not found in manifest")
-          p.write_text(s.replace('.MainActivity', '.DiagnosticActivity'))
+          marker = "</application>"
+          activity = """        <activity
+            android:name=".DiagnosticActivity"
+            android:exported="true"
+            android:theme="@style/Theme.ThreadsSticker" />
+"""
+          if marker not in s:
+              raise SystemExit("application element not found in manifest")
+          if '.DiagnosticActivity' not in s:
+              s=s.replace(marker, activity + "    " + marker)
+          p.write_text(s)
           PY
 
       - uses: actions/setup-java@v4
