@@ -45,6 +45,7 @@ jobs:
           cp overrides/ThreadsParser.kt "$JAVA_DIR/ThreadsParser.kt"
           cp overrides/AppUi.kt "$JAVA_DIR/AppUi.kt"
           cp overrides/MainActivity.kt "$JAVA_DIR/MainActivity.kt"
+          cp overrides/StickerKeyboardService.kt "$JAVA_DIR/StickerKeyboardService.kt"
           cp overrides/UpdateChecker.kt "$JAVA_DIR/UpdateChecker.kt"
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
 
@@ -53,7 +54,7 @@ jobs:
           mkdir -p "$RES_DIR/drawable" "$RES_DIR/values" "$RES_DIR/xml"
           cp overrides/resources/values/strings.xml "$RES_DIR/values/strings.xml"
           cp overrides/resources/xml/file_paths.xml "$RES_DIR/xml/file_paths.xml"
-          base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > "$RES_DIR/drawable/sticker_saver_icon.jpg"
+          cp overrides/resources/drawable/sticker_saver_icon.xml "$RES_DIR/drawable/sticker_saver_icon.xml"
 
       - uses: actions/setup-java@v4
         with:
