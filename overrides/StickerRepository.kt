@@ -1,0 +1,139 @@
+package com.local.threadssticker
+
+import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+
+class StickerRepository(private val context: Context) {
+    private val store = AppStore(context)
+    private val cache = StickerCache(context)
+    private val parser = ThreadsParser()
+
+    private val _stickers = MutableStateFlow(store.loadStickers().toList())
+    val stickers: StateFlow<List<StickerItem>> = _stickers.asStateFlow()
+
+    private val _sources = MutableStateFlow(store.loadSources().toList())
+    val sources: StateFlow<List<SourceRecord>> = _sources.asStateFlow()
+
+    suspend fun parseAndSave(
+        url: String,
+        options: ParseOptions = ParseOptions(),
+        cancelRequested: AtomicBoolean = AtomicBoolean(false),
+        onProgress: (ParseProgress) -> Unit = {},
+    ): ParseResult {
+        return parser.parse(
+            inputUrl = url,
+            options = options,
+            isCancellationRequested = { cancelRequested.get() },
+            onTaskCompleted = { partial, progress ->
+                mergeParsedMedia(partial.sourceUrl, partial.author, partial.media)
+                onProgress(progress)
+            }
+        )
+    }
+
+    private fun mergeParsedMedia(sourceUrl: String, author: String?, media: List<ParsedMedia>) {
+        val stickerList = _stickers.value.toMutableList()
+        val ids = mutableListOf<String>()
+
+        media.forEach { parsed ->
+            val canonicalKey = parsed.url.substringBefore('?').substringBefore('#')
+            val id = AppStore.stableId(sourceUrl + "|" + canonicalKey)
+            ids += id
+
+            val index = stickerList.indexOfFirst { it.id == id }
+            if (index < 0) {
+                stickerList += StickerItem(
+                    id = id,
+                    sourceUrl = sourceUrl,
+                    mediaUrl = parsed.url,
+                    mimeType = parsed.mimeType,
+                    occurrences = listOf(parsed.occurrence),
+                )
+            } else {
+                val old = stickerList[index]
+                val mergedOccurrences = (old.occurrences + parsed.occurrence).distinctBy {
+                    it.type.name + "|" + it.commentId.orEmpty() + "|" + it.commentAuthor.orEmpty()
+                }
+                stickerList[index] = old.copy(
+                    mediaUrl = parsed.url,
+                    mimeType = parsed.mimeType,
+                    occurrences = mergedOccurrences,
+                )
+            }
+        }
+
+        val sourceList = _sources.value.toMutableList()
+        val sourceId = AppStore.stableId(sourceUrl)
+        val old = sourceList.firstOrNull { it.id == sourceId }
+        val replacement = (old ?: SourceRecord(id = sourceId, url = sourceUrl)).copy(
+            author = author ?: old?.author,
+            stickerIds = (old?.stickerIds.orEmpty() + ids).distinct(),
+        )
+
+        sourceList.removeAll { it.id == sourceId }
+        sourceList.add(0, replacement)
+        publish(stickerList, sourceList)
+    }
+
+    fun updateNote(sourceId: String, note: String) {
+        val updated = _sources.value.map {
+            if (it.id == sourceId) it.copy(note = note) else it
+        }
+        publish(_stickers.value, updated)
+    }
+
+    fun attachSnapshot(sourceId: String, path: String?) {
+        val updated = _sources.value.map {
+            if (it.id == sourceId) it.copy(snapshotPath = path) else it
+        }
+        publish(_stickers.value, updated)
+    }
+
+    suspend fun markUsedAndCache(stickerId: String): File {
+        val current = _stickers.value.first { it.id == stickerId }
+        val file = cache.ensureCached(current)
+        val now = System.currentTimeMillis()
+
+        val updatedStickers = _stickers.value.map {
+            if (it.id == stickerId) {
+                it.copy(
+                    localCachePath = file.absolutePath,
+                    useCount = it.useCount + 1,
+                    lastUsedAt = now
+                )
+            } else it
+        }
+
+        val updatedSources = _sources.value.map {
+            if (it.url == current.sourceUrl) it.copy(lastUsedAt = now) else it
+        }
+
+        publish(updatedStickers, updatedSources)
+        return file
+    }
+
+    fun clearStickerCache() {
+        cache.clear()
+        publish(_stickers.value.map { it.copy(localCachePath = null) }, _sources.value)
+    }
+
+    fun cacheSizeBytes(): Long = cache.sizeBytes()
+
+    fun recentStickers(): List<StickerItem> =
+        _stickers.value.sortedByDescending { it.lastUsedAt ?: 0L }
+
+    fun sourceForSticker(id: String): SourceRecord? {
+        val sticker = _stickers.value.firstOrNull { it.id == id } ?: return null
+        return _sources.value.firstOrNull { it.url == sticker.sourceUrl }
+    }
+
+    private fun publish(stickers: List<StickerItem>, sources: List<SourceRecord>) {
+        _stickers.value = stickers
+        _sources.value = sources
+        store.save(stickers, sources)
+    }
+}
