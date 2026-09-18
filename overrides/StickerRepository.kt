@@ -18,18 +18,23 @@ class StickerRepository(private val context: Context) {
     private val _sources = MutableStateFlow(store.loadSources().toList())
     val sources: StateFlow<List<SourceRecord>> = _sources.asStateFlow()
 
+    private val _categories = MutableStateFlow(store.loadCategories().toList())
+    val categories: StateFlow<List<StickerCategory>> = _categories.asStateFlow()
+
     suspend fun parseAndSave(
         url: String,
         options: ParseOptions = ParseOptions(),
+        categoryNames: List<String> = emptyList(),
         cancelRequested: AtomicBoolean = AtomicBoolean(false),
         onProgress: (ParseProgress) -> Unit = {},
     ): ParseResult {
+        val categoryIds = ensureCategories(categoryNames)
         val result = parser.parse(
             inputUrl = url,
             options = options,
             isCancellationRequested = { cancelRequested.get() },
             onTaskCompleted = { partial, progress ->
-                mergeParsedMedia(partial.sourceUrl, partial.author, partial.postText, partial.media)
+                mergeParsedMedia(partial.sourceUrl, partial.author, partial.postText, partial.media, categoryIds)
                 onProgress(progress)
             }
         )
@@ -37,7 +42,13 @@ class StickerRepository(private val context: Context) {
         return result
     }
 
-    private fun mergeParsedMedia(sourceUrl: String, author: String?, postText: String?, media: List<ParsedMedia>) {
+    private fun mergeParsedMedia(
+        sourceUrl: String,
+        author: String?,
+        postText: String?,
+        media: List<ParsedMedia>,
+        categoryIds: List<String>,
+    ) {
         val stickerList = _stickers.value.toMutableList()
         val ids = mutableListOf<String>()
 
@@ -54,6 +65,7 @@ class StickerRepository(private val context: Context) {
                     mediaUrl = parsed.url,
                     mimeType = parsed.mimeType,
                     occurrences = listOf(parsed.occurrence),
+                    categoryIds = categoryIds,
                 )
             } else {
                 val old = stickerList[index]
@@ -64,6 +76,7 @@ class StickerRepository(private val context: Context) {
                     mediaUrl = parsed.url,
                     mimeType = parsed.mimeType,
                     occurrences = mergedOccurrences,
+                    categoryIds = (old.categoryIds + categoryIds).distinct(),
                 )
             }
         }
@@ -107,6 +120,72 @@ class StickerRepository(private val context: Context) {
         if (changed) publish(updated, _sources.value)
     }
 
+    fun ensureCategories(names: List<String>): List<String> {
+        val cleaned = names.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }
+        if (cleaned.isEmpty()) return emptyList()
+
+        val updated = _categories.value.toMutableList()
+        val ids = cleaned.map { name ->
+            val existing = updated.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            if (existing != null) {
+                existing.id
+            } else {
+                val category = StickerCategory(
+                    id = AppStore.stableId("category|" + name.lowercase()),
+                    name = name,
+                )
+                updated += category
+                category.id
+            }
+        }
+        if (updated != _categories.value) {
+            _categories.value = updated
+            persist()
+        }
+        return ids.distinct()
+    }
+
+    fun updateStickerCategories(stickerId: String, selectedCategoryIds: List<String>, newCategoryNames: List<String>) {
+        val newIds = ensureCategories(newCategoryNames)
+        val validIds = (_categories.value.map { it.id }.toSet())
+        val finalIds = (selectedCategoryIds + newIds).filter { it in validIds }.distinct()
+        val updated = _stickers.value.map {
+            if (it.id == stickerId) it.copy(categoryIds = finalIds) else it
+        }
+        publish(updated, _sources.value)
+    }
+
+    fun deleteCategory(categoryId: String) {
+        _categories.value = _categories.value.filterNot { it.id == categoryId }
+        val updated = _stickers.value.map { sticker ->
+            if (categoryId in sticker.categoryIds) sticker.copy(categoryIds = sticker.categoryIds - categoryId) else sticker
+        }
+        _stickers.value = updated
+        persist()
+    }
+
+    fun renameCategory(categoryId: String, newName: String) {
+        val clean = newName.trim()
+        if (clean.isBlank()) return
+        val conflict = _categories.value.firstOrNull {
+            it.id != categoryId && it.name.equals(clean, ignoreCase = true)
+        }
+        if (conflict != null) {
+            val updatedStickers = _stickers.value.map { sticker ->
+                if (categoryId in sticker.categoryIds) {
+                    sticker.copy(categoryIds = (sticker.categoryIds - categoryId + conflict.id).distinct())
+                } else sticker
+            }
+            _categories.value = _categories.value.filterNot { it.id == categoryId }
+            _stickers.value = updatedStickers
+        } else {
+            _categories.value = _categories.value.map {
+                if (it.id == categoryId) it.copy(name = clean) else it
+            }
+        }
+        persist()
+    }
+
     fun updateNote(sourceId: String, note: String) {
         val updated = _sources.value.map {
             if (it.id == sourceId) it.copy(note = note) else it
@@ -144,7 +223,6 @@ class StickerRepository(private val context: Context) {
         return file
     }
 
-
     fun removeSticker(stickerId: String) {
         val target = _stickers.value.firstOrNull { it.id == stickerId } ?: return
         target.localCachePath?.let { runCatching { File(it).delete() } }
@@ -170,13 +248,6 @@ class StickerRepository(private val context: Context) {
         publish(stickers, sources)
     }
 
-    fun clearStickerCache() {
-        cache.clear()
-        publish(_stickers.value.map { it.copy(localCachePath = null) }, _sources.value)
-    }
-
-    fun cacheSizeBytes(): Long = cache.sizeBytes()
-
     fun recentStickers(): List<StickerItem> =
         _stickers.value.sortedByDescending { it.lastUsedAt ?: 0L }
 
@@ -188,6 +259,10 @@ class StickerRepository(private val context: Context) {
     private fun publish(stickers: List<StickerItem>, sources: List<SourceRecord>) {
         _stickers.value = stickers
         _sources.value = sources
-        store.save(stickers, sources)
+        persist()
+    }
+
+    private fun persist() {
+        store.save(_stickers.value, _sources.value, _categories.value)
     }
 }
