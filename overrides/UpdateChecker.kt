@@ -61,11 +61,11 @@ class UpdateChecker(private val context: Context) {
         val request = Request.Builder()
             .url("https://api.github.com/repos/nununuuuu/StickerSaver/releases/latest")
             .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", "StickerSaver/\${currentVersion()}")
+            .header("User-Agent", "StickerSaver/${currentVersion()}")
             .header("Cache-Control", "no-cache")
             .build()
         val json = client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("檢查更新失敗：\${response.code}")
+            if (!response.isSuccessful) error("檢查更新失敗：${response.code}")
             JSONObject(response.body.string())
         }
 
@@ -101,15 +101,15 @@ class UpdateChecker(private val context: Context) {
         val url = info.apkUrl ?: error("此版本沒有可下載的 APK")
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "StickerSaver/\${currentVersion()}")
+            .header("User-Agent", "StickerSaver/${currentVersion()}")
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("下載更新失敗：\${response.code}")
+            if (!response.isSuccessful) error("下載更新失敗：${response.code}")
             val body = response.body
             val total = body.contentLength()
             val dir = context.cacheDir.resolve("updates").apply { mkdirs() }
-            val out = dir.resolve("StickerSaver-v\${info.version}.apk")
+            val out = dir.resolve("StickerSaver-v${info.version}.apk")
             body.byteStream().use { input ->
                 out.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
