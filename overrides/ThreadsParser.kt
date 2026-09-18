@@ -5,6 +5,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
+import org.json.JSONObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.net.URLDecoder
@@ -46,13 +48,15 @@ class ThreadsParser {
                 .ifEmpty { extractPageMedia(doc.html(), MediaOccurrence(MediaOriginType.POST)) }
         } else emptyList()
 
-        val commentElements = if (options.parseComments) {
-            doc.select("article,[role=article],[data-pressable-container=true]").drop(1)
+        val stickerReplies = if (options.parseComments) {
+            extractStickerReplies(html)
         } else emptyList()
 
+        // TOP means the first N replies that actually contain at least one inline sticker.
+        // This deliberately does not claim to match Threads' opaque "熱門" ranking.
         val selectedComments = when (options.commentLoadMode) {
-            CommentLoadMode.ALL -> commentElements
-            CommentLoadMode.TOP -> commentElements.take(options.topCommentCount.coerceIn(1, 200))
+            CommentLoadMode.ALL -> stickerReplies
+            CommentLoadMode.TOP -> stickerReplies.take(options.topCommentCount.coerceIn(1, 200))
         }
 
         val plannedTasks = (if (options.parsePost) 1 else 0) + selectedComments.size
@@ -89,25 +93,26 @@ class ThreadsParser {
         }
 
         if (!cancelled && options.parseComments) {
-            selectedComments.forEachIndexed { index, element ->
+            selectedComments.forEachIndexed { index, reply ->
                 if (isCancellationRequested()) {
                     cancelled = true
                     return@forEachIndexed
                 }
-                val commentAuthor = element.selectFirst("a[href^=/@],a[href*='threads.com/@'],a[href*='threads.net/@']")
-                    ?.text()?.takeIf { it.isNotBlank() }
-                val commentText = element.text().take(300).takeIf { it.isNotBlank() }
-                val commentId = element.id().takeIf { it.isNotBlank() }
-                    ?: AppStore.stableId("comment-" + index + "-" + commentText.orEmpty())
+
                 val occurrence = MediaOccurrence(
                     type = MediaOriginType.COMMENT,
-                    commentId = commentId,
-                    commentAuthor = commentAuthor,
-                    commentText = commentText,
+                    commentId = reply.pk,
+                    commentAuthor = reply.username,
+                    commentText = reply.text,
                 )
-                val media = extractMediaFromElement(element, occurrence)
-                    .ifEmpty { extractPageMedia(element.outerHtml(), occurrence) }
-                emitTask(media, "留言 " + (index + 1))
+                val media = reply.stickerUrls.map { stickerUrl ->
+                    ParsedMedia(
+                        url = stickerUrl,
+                        mimeType = mimeFromUrl(stickerUrl),
+                        occurrence = occurrence,
+                    )
+                }
+                emitTask(media, "有貼圖留言 " + (index + 1))
             }
         }
 
@@ -247,6 +252,110 @@ class ThreadsParser {
             }
         }
         return null
+    }
+
+    private data class StickerReply(
+        val pk: String,
+        val username: String?,
+        val text: String?,
+        val stickerUrls: List<String>,
+    )
+
+    private fun extractStickerReplies(html: String): List<StickerReply> {
+        val doc = Jsoup.parse(html)
+        val replies = linkedMapOf<String, StickerReply>()
+
+        doc.select("script[type=application/json][data-sjs]").forEach { script ->
+            val raw = script.data().ifBlank { script.html() }.trim()
+            if (raw.isBlank()) return@forEach
+
+            val root: Any = runCatching {
+                when {
+                    raw.startsWith("{") -> JSONObject(raw)
+                    raw.startsWith("[") -> JSONArray(raw)
+                    else -> return@forEach
+                }
+            }.getOrNull() ?: return@forEach
+
+            collectStickerReplies(root, replies)
+        }
+
+        return replies.values.filter { it.stickerUrls.isNotEmpty() }
+    }
+
+    private fun collectStickerReplies(
+        node: Any?,
+        replies: MutableMap<String, StickerReply>,
+    ) {
+        when (node) {
+            is JSONObject -> {
+                val info = node.optJSONObject("text_post_app_info")
+                if (info != null && info.optBoolean("is_reply", false) && node.has("pk")) {
+                    val pk = node.optString("pk").ifBlank { node.optString("id") }
+                    if (pk.isNotBlank()) {
+                        val username = node.optJSONObject("user")
+                            ?.optString("username")
+                            ?.takeIf { it.isNotBlank() }
+
+                        val textParts = mutableListOf<String>()
+                        val stickerUrls = mutableListOf<String>()
+                        val fragments = info.optJSONObject("text_fragments")
+                            ?.optJSONArray("fragments")
+
+                        if (fragments != null) {
+                            for (i in 0 until fragments.length()) {
+                                val fragment = fragments.optJSONObject(i) ?: continue
+                                fragment.optString("plaintext")
+                                    .takeIf { it.isNotBlank() && it != "□" }
+                                    ?.let(textParts::add)
+
+                                if (fragment.optString("fragment_type") == "inline_sticker") {
+                                    fragment.optJSONObject("inline_sticker_fragment")
+                                        ?.optString("sticker_url")
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let(stickerUrls::add)
+                                }
+                            }
+                        }
+
+                        if (stickerUrls.isNotEmpty()) {
+                            replies.putIfAbsent(
+                                pk,
+                                StickerReply(
+                                    pk = pk,
+                                    username = username,
+                                    text = textParts.joinToString("")
+                                        .take(300)
+                                        .takeIf { it.isNotBlank() },
+                                    stickerUrls = stickerUrls
+                                        .map(::decodeStickerJsonValue)
+                                        .filter(::looksLikeMedia)
+                                        .distinctBy(::canonicalMediaKey),
+                                )
+                            )
+                        }
+                    }
+                }
+
+                val keys = node.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    val child = node.opt(key)
+                    if (child is JSONObject || child is JSONArray) {
+                        collectStickerReplies(child, replies)
+                    }
+                }
+            }
+
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    val child = node.opt(i)
+                    if (child is JSONObject || child is JSONArray) {
+                        collectStickerReplies(child, replies)
+                    }
+                }
+            }
+        }
     }
 
     private fun extractMediaFromElement(
