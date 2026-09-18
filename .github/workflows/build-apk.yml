@@ -24,6 +24,16 @@ jobs:
           mkdir -p project
           unzip -q project.zip -d project
 
+          sed -i 's/compileSdk = 37/compileSdk = 36/g' project/app/build.gradle.kts
+          sed -i 's/targetSdk = 37/targetSdk = 36/g' project/app/build.gradle.kts
+          sed -i 's/compose-bom:2026.08.00/compose-bom:2025.08.00/g' project/app/build.gradle.kts
+          sed -i 's/activity-compose:1.11.0/activity-compose:1.10.1/g' project/app/build.gradle.kts
+          sed -i 's/core-ktx:1.19.0/core-ktx:1.16.0/g' project/app/build.gradle.kts
+          sed -i 's/lifecycle-runtime-ktx:2.11.0/lifecycle-runtime-ktx:2.9.2/g' project/app/build.gradle.kts
+
+          echo "--- effective app build file ---"
+          cat project/app/build.gradle.kts
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -34,7 +44,7 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
