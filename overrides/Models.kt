@@ -34,6 +34,7 @@ data class SourceRecord(
     val note: String = "",
     val author: String? = null,
     val snapshotPath: String? = null,
+    val postText: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastUsedAt: Long? = null,
     val stickerIds: List<String> = emptyList(),
@@ -42,6 +43,7 @@ data class SourceRecord(
 data class ParseResult(
     val sourceUrl: String,
     val author: String?,
+    val postText: String?,
     val media: List<ParsedMedia>,
     val completedTasks: Int,
     val plannedTasks: Int,
