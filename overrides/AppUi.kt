@@ -61,13 +61,44 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
     var tab by remember { mutableStateOf(Tab.HOME) }
     val context = LocalContext.current
     val checker = remember { UpdateChecker(context) }
+    val scope = rememberCoroutineScope()
+
+    var pendingInput by remember { mutableStateOf(initialSharedText) }
+    var clipboardPromptUrl by remember { mutableStateOf<String?>(null) }
     var update by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updateProgress by remember { mutableIntStateOf(0) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var downloadedApk by remember { mutableStateOf<File?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    val appPrefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+
+    LaunchedEffect(initialSharedText) {
+        if (!initialSharedText.isNullOrBlank()) {
+            pendingInput = initialSharedText
+            tab = Tab.HOME
+        }
+    }
 
     LaunchedEffect(Unit) {
         if (checker.autoCheckEnabled) {
             runCatching { checker.check() }.onSuccess { update = it }.onFailure { error = it.message }
         }
+    }
+
+    DisposableEffect(Unit) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            if (!appPrefs.getBoolean("clipboard_monitor", false)) return@OnPrimaryClipChangedListener
+            val text = clipboard.primaryClip
+                ?.getItemAt(0)
+                ?.coerceToText(context)
+                ?.toString()
+                .orEmpty()
+            extractThreadsUrl(text)?.let { clipboardPromptUrl = it }
+        }
+        clipboard.addPrimaryClipChangedListener(listener)
+        onDispose { clipboard.removePrimaryClipChangedListener(listener) }
     }
 
     MaterialTheme(
@@ -95,7 +126,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
         ) { pad ->
             Box(Modifier.padding(pad).fillMaxSize()) {
                 when (tab) {
-                    Tab.HOME -> Home(activity, repo, stickers, initialSharedText)
+                    Tab.HOME -> Home(activity, repo, stickers, pendingInput)
                     Tab.LIBRARY -> Library(repo, stickers)
                     Tab.SOURCES -> Sources(repo, sources, stickers)
                     Tab.SETTINGS -> Settings(repo, checker, { update = it }, { error = it })
@@ -103,31 +134,92 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
             }
         }
 
+        clipboardPromptUrl?.let { url ->
+            AlertDialog(
+                onDismissRequest = { clipboardPromptUrl = null },
+                title = { Text("偵測到 Threads 連結") },
+                text = { Text("要貼入 Sticker Saver 嗎？") },
+                dismissButton = {
+                    TextButton(onClick = { clipboardPromptUrl = null }) { Text("不要") }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            pendingInput = url
+                            tab = Tab.HOME
+                            clipboardPromptUrl = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    ) { Text("貼入") }
+                }
+            )
+        }
+
         update?.let { info ->
             AlertDialog(
-                onDismissRequest = { update = null },
+                onDismissRequest = { if (!updateDownloading) update = null },
                 title = { Text("發現新版本 v" + info.version) },
                 text = {
-                    LazyColumn {
+                    Column {
                         if (info.features.isNotEmpty()) {
-                            item { Text("新功能", fontWeight = FontWeight.Bold) }
-                            items(info.features.size) { i -> Text("• " + info.features[i]) }
-                            item { Spacer(Modifier.height(10.dp)) }
+                            Text("新功能", fontWeight = FontWeight.Bold)
+                            info.features.forEach { Text("• " + it) }
+                            Spacer(Modifier.height(8.dp))
                         }
                         if (info.fixes.isNotEmpty()) {
-                            item { Text("修正功能", fontWeight = FontWeight.Bold) }
-                            items(info.fixes.size) { i -> Text("• " + info.fixes[i]) }
-                            item { Spacer(Modifier.height(10.dp)) }
+                            Text("修正", fontWeight = FontWeight.Bold)
+                            info.fixes.forEach { Text("• " + it) }
+                            Spacer(Modifier.height(8.dp))
                         }
-                        item { Text("Threads 網頁結構及解析方式可能變動，未更新程式可能導致部分功能失效。", color = MaterialTheme.colorScheme.error) }
+                        if (updateDownloading || downloadedApk != null) {
+                            LinearProgressIndicator(
+                                progress = { updateProgress / 100f },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Accent,
+                                trackColor = WarmSelected
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                if (downloadedApk != null) "下載完成，準備安裝"
+                                else "下載中 $updateProgress%",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 },
-                dismissButton = { TextButton(onClick = { update = null }) { Text("取消") } },
+                dismissButton = {
+                    if (!updateDownloading) {
+                        TextButton(onClick = { update = null }) { Text("取消") }
+                    }
+                },
                 confirmButton = {
-                    Button(onClick = {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.apkUrl ?: info.releaseUrl)))
-                        update = null
-                    }) { Text("更新") }
+                    Button(
+                        onClick = {
+                            val ready = downloadedApk
+                            if (ready != null) {
+                                installDownloadedApk(context, ready)
+                            } else if (!updateDownloading) {
+                                updateDownloading = true
+                                updateProgress = 0
+                                scope.launch {
+                                    runCatching {
+                                        checker.downloadApk(info) { updateProgress = it }
+                                    }.onSuccess { file ->
+                                        downloadedApk = file
+                                        updateProgress = 100
+                                        installDownloadedApk(context, file)
+                                    }.onFailure {
+                                        error = it.message ?: "更新下載失敗"
+                                    }
+                                    updateDownloading = false
+                                }
+                            }
+                        },
+                        enabled = !updateDownloading,
+                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    ) {
+                        Text(if (downloadedApk != null) "安裝" else if (updateDownloading) "下載中…" else "更新")
+                    }
                 }
             )
         }
@@ -135,7 +227,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
         error?.let { msg ->
             AlertDialog(
                 onDismissRequest = { error = null },
-                title = { Text("檢查更新失敗") },
+                title = { Text("發生錯誤") },
                 text = { Text(msg) },
                 confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } }
             )
