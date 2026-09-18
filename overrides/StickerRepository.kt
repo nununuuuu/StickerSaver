@@ -155,6 +155,21 @@ class StickerRepository(private val context: Context) {
         publish(stickers, sources)
     }
 
+    fun removeSource(sourceId: String) {
+        val source = _sources.value.firstOrNull { it.id == sourceId } ?: return
+        val removed = _stickers.value.filter { it.sourceUrl == source.url || it.id in source.stickerIds }
+        removed.forEach { sticker ->
+            sticker.localCachePath?.let { runCatching { File(it).delete() } }
+        }
+        source.snapshotPath?.let { runCatching { File(it).delete() } }
+
+        val stickers = _stickers.value.filterNot { item ->
+            item.sourceUrl == source.url || item.id in source.stickerIds
+        }
+        val sources = _sources.value.filterNot { it.id == sourceId }
+        publish(stickers, sources)
+    }
+
     fun clearStickerCache() {
         cache.clear()
         publish(_stickers.value.map { it.copy(localCachePath = null) }, _sources.value)
