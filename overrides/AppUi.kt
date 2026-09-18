@@ -98,12 +98,12 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
             delay(2500)
             var info: UpdateInfo? = null
             var success = false
-            repeat(2) { attempt ->
+            for (attempt in 0..1) {
                 val result = runCatching { checker.check() }
                 if (result.isSuccess) {
                     info = result.getOrNull()
                     success = true
-                    return@repeat
+                    break
                 }
                 if (attempt == 0) delay(2000)
             }
