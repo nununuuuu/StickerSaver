@@ -37,8 +37,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.io.File
@@ -56,7 +54,7 @@ private enum class Tab { HOME, LIBRARY, SOURCES, SETTINGS }
 private enum class LibraryTab { RECENT, FREQUENT, ALL }
 
 @Composable
-fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
+fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedClipboardText: String?) {
     val repo = (activity.application as StickerApplication).repository
     val stickers by repo.stickers.collectAsState()
     val sources by repo.sources.collectAsState()
@@ -82,17 +80,28 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
         }
     }
 
+    LaunchedEffect(focusedClipboardText) {
+        val url = focusedClipboardText?.let(::extractThreadsUrl)
+        if (!url.isNullOrBlank() &&
+            appPrefs.getBoolean("clipboard_monitor", false) &&
+            url != pendingInput &&
+            clipboardPromptUrl == null
+        ) {
+            clipboardPromptUrl = url
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (checker.autoCheckEnabled) {
             runCatching { checker.check() }.onSuccess { update = it }.onFailure { error = it.message }
         }
     }
 
-    DisposableEffect(activity, appPrefs) {
+    DisposableEffect(appPrefs) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
-        fun checkClipboard() {
-            if (!appPrefs.getBoolean("clipboard_monitor", false)) return
+        val listener = ClipboardManager.OnPrimaryClipChangedListener {
+            if (!appPrefs.getBoolean("clipboard_monitor", false)) return@OnPrimaryClipChangedListener
             val text = runCatching {
                 clipboard.primaryClip
                     ?.getItemAt(0)
@@ -107,22 +116,9 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
             }
         }
 
-        val listener = ClipboardManager.OnPrimaryClipChangedListener {
-            checkClipboard()
-        }
-        val lifecycleObserver = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                checkClipboard()
-            }
-        }
-
         clipboard.addPrimaryClipChangedListener(listener)
-        activity.lifecycle.addObserver(lifecycleObserver)
-        checkClipboard()
-
         onDispose {
             clipboard.removePrimaryClipChangedListener(listener)
-            activity.lifecycle.removeObserver(lifecycleObserver)
         }
     }
 
