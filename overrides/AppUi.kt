@@ -30,7 +30,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 private val Paper = Color(0xFFF7F5F2)
-private val Accent = Color(0xFF746BFF)
+private val Accent = Color(0xFF34312E)
 private enum class Tab { HOME, LIBRARY, SOURCES, SETTINGS }
 
 @Composable
@@ -50,7 +50,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
         }
     }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = Accent, background = Paper, surface = Paper)) {
+    MaterialTheme(colorScheme = lightColorScheme(primary = Accent, secondary = Color(0xFF6F675F), background = Paper, surface = Paper, surfaceVariant = Color(0xFFECE7E0), onPrimary = Color.White, onBackground = Color(0xFF242220), onSurface = Color(0xFF242220))) {
         Scaffold(
             containerColor = Paper,
             bottomBar = {
@@ -139,7 +139,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
     val scope = rememberCoroutineScope()
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
-        item { Header("Threads Sticker", "貼上 Threads 連結並選擇解析範圍") }
+        item { Header("Sticker Saver", "貼上 Threads 連結並選擇解析範圍") }
         item {
             Card(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), shape = RoundedCornerShape(24.dp)) {
                 Column(Modifier.padding(16.dp)) {
@@ -306,7 +306,7 @@ private fun Settings(repo: StickerRepository, checker: UpdateChecker, found: (Up
 
     Column(Modifier.fillMaxSize()) {
         Header("設定", "鍵盤、快取與版本")
-        SettingRow("鍵盤", "啟用 Threads Sticker Keyboard", Icons.Outlined.Keyboard) {
+        SettingRow("鍵盤", "啟用 Sticker Saver 鍵盤", Icons.Outlined.Keyboard) {
             context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         Spacer(Modifier.height(10.dp))
@@ -337,7 +337,7 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
         title = { Text("關於") },
         text = {
             Column {
-                Text("Threads Sticker Keyboard", fontWeight = FontWeight.SemiBold)
+                Text("Sticker Saver", fontWeight = FontWeight.SemiBold)
                 Text("版本 " + checker.currentVersion())
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
