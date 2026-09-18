@@ -21,10 +21,6 @@ class StickerRepository(private val context: Context) {
     private val _categories = MutableStateFlow(store.loadCategories().toList())
     val categories: StateFlow<List<StickerCategory>> = _categories.asStateFlow()
 
-    init {
-        pruneUnusedCategories()
-    }
-
     suspend fun parseAndSave(
         url: String,
         options: ParseOptions = ParseOptions(),
@@ -33,22 +29,16 @@ class StickerRepository(private val context: Context) {
         onProgress: (ParseProgress) -> Unit = {},
     ): ParseResult {
         val categoryIds = ensureCategories(categoryNames)
-        val result = try {
-            parser.parse(
-                inputUrl = url,
-                options = options,
-                isCancellationRequested = { cancelRequested.get() },
-                onTaskCompleted = { partial, progress ->
-                    mergeParsedMedia(partial.sourceUrl, partial.author, partial.postText, partial.media, categoryIds)
-                    onProgress(progress)
-                }
-            )
-        } catch (t: Throwable) {
-            pruneUnusedCategories()
-            throw t
-        }
+        val result = parser.parse(
+            inputUrl = url,
+            options = options,
+            isCancellationRequested = { cancelRequested.get() },
+            onTaskCompleted = { partial, progress ->
+                mergeParsedMedia(partial.sourceUrl, partial.author, partial.postText, partial.media, categoryIds)
+                onProgress(progress)
+            }
+        )
         cacheParsedMedia(result.media)
-        pruneUnusedCategories()
         return result
     }
 
@@ -165,6 +155,53 @@ class StickerRepository(private val context: Context) {
         publish(updated, _sources.value)
     }
 
+    fun addCategoriesToStickers(
+        stickerIds: Set<String>,
+        categoryIds: Set<String>,
+        newCategoryNames: List<String>,
+    ) {
+        if (stickerIds.isEmpty()) return
+        val newIds = ensureCategories(newCategoryNames)
+        val validIds = _categories.value.map { it.id }.toSet()
+        val addIds = (categoryIds + newIds).filter { it in validIds }.toSet()
+        if (addIds.isEmpty()) return
+
+        val updated = _stickers.value.map { sticker ->
+            if (sticker.id in stickerIds) {
+                sticker.copy(categoryIds = (sticker.categoryIds + addIds).distinct())
+            } else sticker
+        }
+        publish(updated, _sources.value)
+    }
+
+    fun removeCategoriesFromStickers(
+        stickerIds: Set<String>,
+        categoryIds: Set<String>,
+    ) {
+        if (stickerIds.isEmpty() || categoryIds.isEmpty()) return
+        val updated = _stickers.value.map { sticker ->
+            if (sticker.id in stickerIds) {
+                sticker.copy(categoryIds = sticker.categoryIds.filterNot { it in categoryIds })
+            } else sticker
+        }
+        publish(updated, _sources.value)
+    }
+
+    fun removeStickers(stickerIds: Set<String>) {
+        if (stickerIds.isEmpty()) return
+        val removed = _stickers.value.filter { it.id in stickerIds }
+        removed.forEach { sticker ->
+            sticker.localCachePath?.let { runCatching { File(it).delete() } }
+        }
+
+        val stickers = _stickers.value.filterNot { it.id in stickerIds }
+        val sources = _sources.value.map { source ->
+            val remaining = source.stickerIds.filterNot { it in stickerIds }
+            if (remaining != source.stickerIds) source.copy(stickerIds = remaining) else source
+        }
+        publish(stickers, sources)
+    }
+
     fun deleteCategory(categoryId: String) {
         _categories.value = _categories.value.filterNot { it.id == categoryId }
         val updated = _stickers.value.map { sticker ->
@@ -269,19 +306,7 @@ class StickerRepository(private val context: Context) {
     private fun publish(stickers: List<StickerItem>, sources: List<SourceRecord>) {
         _stickers.value = stickers
         _sources.value = sources
-        pruneUnusedCategories(persistAfter = false)
         persist()
-    }
-
-    private fun pruneUnusedCategories(persistAfter: Boolean = true) {
-        val usedIds = _stickers.value
-            .flatMap { it.categoryIds }
-            .toSet()
-        val cleaned = _categories.value.filter { it.id in usedIds }
-        if (cleaned != _categories.value) {
-            _categories.value = cleaned
-            if (persistAfter) persist()
-        }
     }
 
     private fun persist() {
