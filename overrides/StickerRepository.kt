@@ -88,22 +88,16 @@ class StickerRepository(private val context: Context) {
 
     private suspend fun cacheParsedMedia(media: List<ParsedMedia>) {
         if (media.isEmpty()) return
-        val mediaIds = media.map { parsed ->
-            val canonicalKey = parsed.url.substringBefore('?').substringBefore('#')
-            AppStore.stableId(parsed.occurrence.let { media.firstOrNull()?.occurrence }; "")
-        }
-        val targetIds = media.map { parsed ->
-            val canonicalKey = parsed.url.substringBefore('?').substringBefore('#')
-            val sourceUrl = _stickers.value.firstOrNull { it.mediaUrl.substringBefore('?') == parsed.url.substringBefore('?') }?.sourceUrl
-            if (sourceUrl == null) null else AppStore.stableId(sourceUrl + "|" + canonicalKey)
-        }.filterNotNull().toSet()
+        val targetUrls = media
+            .map { it.url.substringBefore('?').substringBefore('#') }
+            .toSet()
 
-        if (targetIds.isEmpty()) return
         val updated = _stickers.value.toMutableList()
         var changed = false
         updated.indices.forEach { index ->
             val sticker = updated[index]
-            if (sticker.id !in targetIds) return@forEach
+            val canonical = sticker.mediaUrl.substringBefore('?').substringBefore('#')
+            if (canonical !in targetUrls) return@forEach
             val file = runCatching { cache.ensureCached(sticker) }.getOrNull() ?: return@forEach
             if (sticker.localCachePath != file.absolutePath) {
                 updated[index] = sticker.copy(localCachePath = file.absolutePath)
