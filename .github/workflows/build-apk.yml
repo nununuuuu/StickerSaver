@@ -41,7 +41,6 @@ jobs:
           cp overrides/resources/mipmap-anydpi-v26/ic_launcher.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
           cp overrides/resources/mipmap-anydpi-v26/ic_launcher_round.xml project/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
           cp overrides/resources/xml/file_paths.xml project/app/src/main/res/xml/file_paths.xml
-          base64 --decode overrides/resources/sticker_saver_icon.jpg.b64 > project/app/src/main/res/drawable/sticker_saver_icon.jpg
           sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">Sticker Saver</string>#' project/app/src/main/res/values/strings.xml
           python3 - <<'PY'
           from pathlib import Path
@@ -69,11 +68,9 @@ jobs:
           '''
               s = s.replace("</application>", provider + "    </application>")
 
-          s = re.sub(r'android:icon="@[^"]+"', 'android:icon="@drawable/sticker_saver_icon"', s, count=1)
+          s = re.sub(r'android:icon="@[^"]+"', 'android:icon="@mipmap/ic_launcher"', s, count=1)
           if 'android:roundIcon=' in s:
-              s = re.sub(r'android:roundIcon="@[^"]+"', 'android:roundIcon="@drawable/sticker_saver_icon"', s, count=1)
-          else:
-              s = s.replace("<application", '<application android:roundIcon="@drawable/sticker_saver_icon"', 1)
+              s = re.sub(r'android:roundIcon="@[^"]+"', 'android:roundIcon="@mipmap/ic_launcher_round"', s, count=1)
 
           if "android.intent.action.SEND" not in s:
               share_filter = '''
