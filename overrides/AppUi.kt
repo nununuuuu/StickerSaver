@@ -265,13 +265,55 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
     var input by remember { mutableStateOf(shared.orEmpty()) }
     var post by remember { mutableStateOf(true) }
     var comments by remember { mutableStateOf(false) }
-    var allComments by remember { mutableStateOf(false) }
-    var topText by remember { mutableStateOf("5") }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableStateOf<ParseProgress?>(null) }
+    var lastResult by remember { mutableStateOf<ParseResult?>(null) }
     val cancel = remember { AtomicBoolean(false) }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(shared) {
+        if (!shared.isNullOrBlank()) input = shared
+    }
+
+    fun startParse(includePost: Boolean, commentLimit: Int, loadAll: Boolean = false) {
+        cancel.set(false)
+        loading = true
+        message = null
+        progress = null
+        scope.launch {
+            runCatching {
+                repo.parseAndSave(
+                    input,
+                    ParseOptions(
+                        parsePost = includePost,
+                        parseComments = comments,
+                        commentLoadMode = if (loadAll) CommentLoadMode.ALL else CommentLoadMode.TOP,
+                        topCommentCount = commentLimit.coerceIn(1, 500)
+                    ),
+                    cancel,
+                    { progress = it }
+                )
+            }.onSuccess { parsed ->
+                lastResult = parsed
+                message = if (parsed.cancelled) {
+                    "已停止後續解析；已完成 " + parsed.completedTasks + "/" + parsed.plannedTasks
+                } else {
+                    val parts = mutableListOf<String>()
+                    if (includePost) parts += "貼文 " + parsed.postMedia.size
+                    if (comments) parts += "留言貼圖 " + parsed.commentMedia.size
+                    "完成：" + parts.joinToString("、")
+                }
+                val sourceId = AppStore.stableId(parsed.sourceUrl)
+                if (repo.sources.value.firstOrNull { it.id == sourceId }?.snapshotPath == null) {
+                    SourceSnapshotter.capture(activity, sourceId, parsed.sourceUrl)?.let {
+                        repo.attachSnapshot(sourceId, it)
+                    }
+                }
+            }.onFailure { message = it.message ?: "解析失敗" }
+            loading = false
+        }
+    }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
         item { Header("Sticker Saver", "貼上 Threads 連結並選擇解析範圍") }
@@ -305,44 +347,23 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         Spacer(Modifier.width(12.dp))
                         Checkbox(
                             comments,
-                            { if (!loading) comments = it },
+                            {
+                                if (!loading) {
+                                    comments = it
+                                    lastResult = null
+                                }
+                            },
                             colors = CheckboxDefaults.colors(checkedColor = Accent)
                         )
                         Text("留言")
                     }
+
                     if (comments) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                !allComments,
-                                { if (!loading) allComments = false },
-                                colors = RadioButtonDefaults.colors(selectedColor = Accent)
-                            )
-                            Text("前")
-                            OutlinedTextField(
-                                value = topText,
-                                onValueChange = { v -> if (!loading && v.length <= 3 && v.all(Char::isDigit)) topText = v },
-                                modifier = Modifier.width(84.dp),
-                                enabled = !loading && !allComments,
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                            )
-                            Text("則有貼圖留言")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(
-                                allComments,
-                                { if (!loading) allComments = true },
-                                colors = RadioButtonDefaults.colors(selectedColor = Accent)
-                            )
-                            Text("全部有貼圖留言")
-                        }
-                        if (allComments) {
-                            Text(
-                                "目前會解析 Threads 初始載入資料中可取得的所有有貼圖留言。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Muted
-                            )
-                        }
+                        Text(
+                            "初次讀取前 20 則預載留言，只保存其中的 Sticker / GIF。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Muted
+                        )
                     }
 
                     Spacer(Modifier.height(12.dp))
@@ -351,37 +372,9 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                             onClick = {
                                 if (!post && !comments) {
                                     message = "請至少選擇貼文或留言"
-                                    return@Button
-                                }
-                                cancel.set(false)
-                                loading = true
-                                message = null
-                                progress = null
-                                scope.launch {
-                                    runCatching {
-                                        repo.parseAndSave(
-                                            input,
-                                            ParseOptions(
-                                                parsePost = post,
-                                                parseComments = comments,
-                                                commentLoadMode = if (allComments) CommentLoadMode.ALL else CommentLoadMode.TOP,
-                                                topCommentCount = topText.toIntOrNull()?.coerceIn(1, 200) ?: 5
-                                            ),
-                                            cancel,
-                                            { progress = it }
-                                        )
-                                    }.onSuccess { result ->
-                                        message = if (result.cancelled) {
-                                            "已停止後續解析；已完成 " + result.completedTasks + "/" + result.plannedTasks + "，結果已保留"
-                                        } else {
-                                            "完成：貼文 " + result.postMedia.size + "、留言 " + result.commentMedia.size
-                                        }
-                                        val sourceId = AppStore.stableId(result.sourceUrl)
-                                        if (repo.sources.value.firstOrNull { it.id == sourceId }?.snapshotPath == null) {
-                                            SourceSnapshotter.capture(activity, sourceId, result.sourceUrl)?.let { repo.attachSnapshot(sourceId, it) }
-                                        }
-                                    }.onFailure { message = it.message ?: "解析失敗" }
-                                    loading = false
+                                } else {
+                                    lastResult = null
+                                    startParse(post, 20)
                                 }
                             },
                             enabled = input.isNotBlank(),
@@ -408,6 +401,32 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         )
                         Text(it.currentLabel + " · " + it.completedTasks + "/" + it.plannedTasks, style = MaterialTheme.typography.bodySmall)
                     }
+
+                    lastResult?.takeIf { comments }?.let { parsed ->
+                        val loaded = parsed.selectedCommentCount
+                        val remaining = (parsed.availableCommentCount - loaded).coerceAtLeast(0)
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "已讀取 " + loaded + " / " + parsed.availableCommentCount + " 則目前預載留言",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Muted
+                        )
+                        if (remaining > 0 && !loading) {
+                            Spacer(Modifier.height(8.dp))
+                            if (remaining >= 20) {
+                                OutlinedButton(
+                                    onClick = { startParse(false, loaded + 20) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("再載入 20 則留言") }
+                                Spacer(Modifier.height(6.dp))
+                            }
+                            OutlinedButton(
+                                onClick = { startParse(false, 500, loadAll = true) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("載入剩餘 " + remaining + " 則留言") }
+                        }
+                    }
+
                     message?.let { Text(it, Modifier.padding(top = 10.dp)) }
                 }
             }
