@@ -2,6 +2,8 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -124,6 +126,15 @@ jobs:
 
           tree.write(p, encoding="utf-8", xml_declaration=True)
           PY
+
+      - name: Dump reconstructed Android metadata
+        shell: bash
+        run: |
+          echo "=== BASE MANIFEST ==="
+          cat project/app/src/main/AndroidManifest.xml
+          echo
+          echo "=== BASE STRINGS ==="
+          cat project/app/src/main/res/values/strings.xml
 
       - uses: actions/setup-java@v4
         with:
