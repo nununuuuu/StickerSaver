@@ -441,10 +441,15 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
 
 @Composable
 private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
-    var selected by remember { mutableStateOf(LibraryTab.RECENT) }
-    val shown = when (selected) {
+    val pagerState = rememberPagerState(pageCount = { 3 })
+    val scope = rememberCoroutineScope()
+    val selected = LibraryTab.entries[pagerState.currentPage]
+
+    fun listFor(tab: LibraryTab): List<StickerItem> = when (tab) {
         LibraryTab.RECENT -> stickers.takeLast(8).reversed()
-        LibraryTab.FREQUENT -> stickers.sortedWith(compareByDescending<StickerItem> { it.useCount }.thenByDescending { it.lastUsedAt ?: 0L }).take(8)
+        LibraryTab.FREQUENT -> stickers
+            .sortedWith(compareByDescending<StickerItem> { it.useCount }.thenByDescending { it.lastUsedAt ?: 0L })
+            .take(8)
         LibraryTab.ALL -> stickers.asReversed()
     }
 
@@ -454,15 +459,28 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
             Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            LibraryFilter("最新", selected == LibraryTab.RECENT) { selected = LibraryTab.RECENT }
-            LibraryFilter("常用", selected == LibraryTab.FREQUENT) { selected = LibraryTab.FREQUENT }
-            LibraryFilter("全部", selected == LibraryTab.ALL) { selected = LibraryTab.ALL }
+            LibraryFilter("最新", selected == LibraryTab.RECENT) {
+                scope.launch { pagerState.animateScrollToPage(0) }
+            }
+            LibraryFilter("常用", selected == LibraryTab.FREQUENT) {
+                scope.launch { pagerState.animateScrollToPage(1) }
+            }
+            LibraryFilter("全部", selected == LibraryTab.ALL) {
+                scope.launch { pagerState.animateScrollToPage(2) }
+            }
         }
         Spacer(Modifier.height(12.dp))
-        if (shown.isEmpty()) {
-            Empty("還沒有貼圖")
-        } else {
-            StickerGrid(repo, shown, Modifier.weight(1f))
+
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) { page ->
+            val shown = listFor(LibraryTab.entries[page])
+            if (shown.isEmpty()) {
+                Empty("還沒有貼圖")
+            } else {
+                StickerGrid(repo, shown, Modifier.fillMaxSize())
+            }
         }
     }
 }
