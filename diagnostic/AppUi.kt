@@ -1,9 +1,5 @@
 package com.local.threadssticker
 
-import android.annotation.SuppressLint
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,124 +8,144 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 private const val TEST_URL = "https://www.threads.com/@ethanzhang688/post/DdYPqUdAXes"
 
 @Composable
 fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
     var log by remember { mutableStateOf("準備測試 DdYPqUdAXes\n") }
-    var web by remember { mutableStateOf<WebView?>(null) }
+    var running by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Sticker Saver · Threads Diagnostic", style = MaterialTheme.typography.titleLarge)
+            Text("Sticker Saver · HTTP Diagnostic", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
-            Text("不使用 Jina，只測試手機 WebView / Threads 本身。", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "不使用 Jina、不使用 WebView。直接用 Android OkHttp 抓 Threads 原始 HTML，檢查 inline_sticker_fragment。",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.height(12.dp))
+
             Button(
                 onClick = {
-                    log = "開始載入 Threads…\n"
-                    web?.loadUrl(TEST_URL)
+                    if (running) return@Button
+                    running = true
+                    log = "開始純 HTTP 測試…\n"
+                    scope.launch {
+                        runCatching { runHttpDiagnostic(TEST_URL) }
+                            .onSuccess { log = it }
+                            .onFailure { e ->
+                                log = "HTTP 測試失敗\n" +
+                                    (e::class.simpleName ?: "Exception") + ": " +
+                                    (e.message ?: "unknown error")
+                            }
+                        running = false
+                    }
                 },
+                enabled = !running,
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("測試 Threads") }
+            ) {
+                if (running) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("測試中…")
+                } else {
+                    Text("測試純 HTTP")
+                }
+            }
 
             Spacer(Modifier.height(12.dp))
             Text(
                 text = log,
-                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 style = MaterialTheme.typography.bodySmall
-            )
-
-            DiagnosticWebView(
-                onReady = { web = it },
-                onLog = { line -> log += line + "\n" }
             )
         }
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun DiagnosticWebView(
-    onReady: (WebView) -> Unit,
-    onLog: (String) -> Unit
-) {
-    AndroidView(
-        modifier = Modifier.size(1.dp),
-        factory = { context ->
-            WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.userAgentString = settings.userAgentString.replace("; wv", "")
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView?,
-                        request: WebResourceRequest?
-                    ): android.webkit.WebResourceResponse? {
-                        val u = request?.url?.toString().orEmpty()
-                        val low = u.lowercase()
-                        val interesting = listOf(
-                            "giphy", ".gif", ".webp", "fbcdn",
-                            "cdninstagram", "scontent", "image_versions",
-                            "video_versions", "carousel_media"
-                        ).any { low.contains(it) }
-                        if (interesting) {
-                            view?.post { onLog("NET  " + u.take(500)) }
-                        }
-                        return super.shouldInterceptRequest(view, request)
-                    }
+private suspend fun runHttpDiagnostic(url: String): String = withContext(Dispatchers.IO) {
+    val client = OkHttpClient.Builder()
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
 
-                    override fun onPageFinished(view: WebView, url: String) {
-                        onLog("PAGE " + url)
-                        val js = """
-                            (function() {
-                              const html = document.documentElement.outerHTML || "";
-                              const low = html.toLowerCase();
-                              const keys = [
-                                "giphy_media_info",
-                                "media_type",
-                                "image_versions2",
-                                "video_versions",
-                                "carousel_media",
-                                "media_overlay_info",
-                                "giphy.com",
-                                "media.giphy.com"
-                              ];
-                              const counts = {};
-                              keys.forEach(function(k) {
-                                counts[k] = low.split(k.toLowerCase()).length - 1;
-                              });
+    val request = Request.Builder()
+        .url(url)
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+        )
+        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+        .header("Accept-Language", "zh-TW,zh;q=0.9,en;q=0.7")
+        .header("Cache-Control", "no-cache")
+        .build()
 
-                              const urls = [];
-                              document.querySelectorAll("img,video,source").forEach(function(e) {
-                                ["src","data-src","poster"].forEach(function(a) {
-                                  const v = e.getAttribute(a);
-                                  if (v) urls.push(v);
-                                });
-                                const s = e.getAttribute("srcset");
-                                if (s) urls.push(s);
-                              });
+    client.newCall(request).execute().use { response ->
+        val body = response.body.string()
+        val inlineCount = Regex("inline_sticker_fragment", RegexOption.IGNORE_CASE)
+            .findAll(body).count()
+        val typeCount = Regex("\\\"fragment_type\\\"\\s*:\\s*\\\"inline_sticker\\\"")
+            .findAll(body).count()
 
-                              return JSON.stringify({
-                                title: document.title,
-                                htmlLength: html.length,
-                                mediaElements: urls.length,
-                                counts: counts,
-                                candidates: urls.filter(function(u) {
-                                  return /giphy|gif|webp|fbcdn|cdninstagram|scontent/i.test(u);
-                                }).slice(0, 100)
-                              });
-                            })();
-                        """.trimIndent()
-                        view.evaluateJavascript(js) { result ->
-                            onLog("DOM  " + result.take(20000))
-                        }
-                    }
+        val rawUrls = Regex("\\\"sticker_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+            .findAll(body)
+            .map { it.groupValues[1] }
+            .toList()
+
+        val rawIds = Regex("\\\"sticker_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+            .findAll(body)
+            .map { it.groupValues[1] }
+            .toList()
+
+        fun decode(value: String): String = value
+            .replace("\\\\/", "/")
+            .replace("\\\\u002F", "/", ignoreCase = true)
+            .replace("\\\\u003A", ":", ignoreCase = true)
+            .replace("\\\\u003D", "=", ignoreCase = true)
+            .replace("\\\\u0026", "&", ignoreCase = true)
+
+        val urls = rawUrls.map(::decode).distinct()
+        val ids = rawIds.distinct()
+
+        buildString {
+            appendLine("HTTP status: " + response.code)
+            appendLine("Final URL: " + response.request.url)
+            appendLine("Content-Type: " + (response.header("Content-Type") ?: "(none)"))
+            appendLine("HTML bytes/chars: " + body.length)
+            appendLine()
+            appendLine("inline_sticker_fragment: " + inlineCount)
+            appendLine("fragment_type=inline_sticker: " + typeCount)
+            appendLine("sticker_id: " + ids.size)
+            appendLine("sticker_url: " + urls.size)
+            appendLine()
+
+            if (urls.isEmpty()) {
+                appendLine("結果：原始 HTTP HTML 沒抓到 sticker_url")
+                appendLine("contains giphy.com: " + body.contains("giphy.com", ignoreCase = true))
+                appendLine("contains inline_sticker: " + body.contains("inline_sticker", ignoreCase = true))
+            } else {
+                appendLine("結果：成功從原始 HTTP HTML 抓到 Sticker")
+                appendLine()
+                urls.take(40).forEachIndexed { index, stickerUrl ->
+                    val id = ids.getOrNull(index)
+                    appendLine("#" + (index + 1) + (id?.let { "  id=" + it } ?: ""))
+                    appendLine(stickerUrl)
+                    appendLine()
                 }
-                onReady(this)
             }
         }
-    )
+    }
 }
