@@ -24,7 +24,7 @@ import android.widget.Toast
 import android.inputmethodservice.InputMethodService
 import androidx.core.content.FileProvider
 import coil3.ImageLoader
-import coil3.request.ImageRequest
+import coil3.load
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -137,10 +137,10 @@ class StickerKeyboardService : InputMethodService() {
             setPadding(0, 0, 0, dp(4))
             clipToPadding = false
             onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
-                adapter?.itemAt(position)?.let(::insertSticker)
+                this@StickerKeyboardService.adapter?.itemAt(position)?.let(::insertSticker)
             }
             onItemLongClickListener = AdapterView.OnItemLongClickListener { _, _, position, _ ->
-                adapter?.itemAt(position)?.let(::shareSticker)
+                this@StickerKeyboardService.adapter?.itemAt(position)?.let(::shareSticker)
                 true
             }
         }
@@ -327,19 +327,14 @@ class StickerKeyboardService : InputMethodService() {
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
                 setPadding(dp(context, 5), dp(context, 5), dp(context, 5), dp(context, 5))
                 setBackgroundColor(Color.WHITE)
-                layoutParams = GridView.LayoutParams(
-                    GridView.LayoutParams.MATCH_PARENT,
+                layoutParams = android.widget.AbsListView.LayoutParams(
+                    android.widget.AbsListView.LayoutParams.MATCH_PARENT,
                     dp(context, 72)
                 )
             }
             val sticker = items[position]
             val model: Any = sticker.localCachePath?.let(::File) ?: sticker.mediaUrl
-            imageLoader.enqueue(
-                ImageRequest.Builder(context)
-                    .data(model)
-                    .target(image)
-                    .build()
-            )
+            image.load(model, imageLoader)
             return image
         }
 
