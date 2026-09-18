@@ -793,7 +793,28 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
     editTarget?.let { target ->
         val fresh = repo.stickers.collectAsState().value.firstOrNull { it.id == target.id } ?: target
         var selectedIds by remember(fresh.id, fresh.categoryIds) { mutableStateOf(fresh.categoryIds.toSet()) }
-        var newNames by remember(fresh.id) { mutableStateOf("") }
+        var newCategoryText by remember(fresh.id) { mutableStateOf("") }
+        var pendingNewNames by remember(fresh.id) { mutableStateOf<List<String>>(emptyList()) }
+
+        fun addCategoryFromInput() {
+            val names = newCategoryText
+                .split('+')
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase() }
+
+            if (names.isEmpty()) return
+
+            names.forEach { name ->
+                val existing = categories.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                if (existing != null) {
+                    selectedIds = selectedIds + existing.id
+                } else if (pendingNewNames.none { it.equals(name, ignoreCase = true) }) {
+                    pendingNewNames = pendingNewNames + name
+                }
+            }
+            newCategoryText = ""
+        }
 
         AlertDialog(
             onDismissRequest = { editTarget = null },
@@ -815,35 +836,92 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
                         )
                     }
                     Text("分類", fontWeight = FontWeight.SemiBold)
-                    if (categories.isEmpty()) {
-                        Text("尚未建立分類", color = Muted, style = MaterialTheme.typography.bodySmall)
+
+                    val assignedCategories = categories
+                        .filter { it.id in selectedIds }
+                        .sortedBy { it.name.lowercase() }
+
+                    if (assignedCategories.isEmpty() && pendingNewNames.isEmpty()) {
+                        Text(
+                            "這張貼圖目前沒有分類",
+                            color = Muted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
                     } else {
-                        Column(Modifier.heightIn(max = 190.dp)) {
-                            categories.sortedBy { it.name.lowercase() }.forEach { category ->
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = category.id in selectedIds,
-                                        onCheckedChange = { checked ->
-                                            selectedIds = if (checked) selectedIds + category.id
-                                            else selectedIds - category.id
-                                        },
-                                        colors = CheckboxDefaults.colors(checkedColor = Accent)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            contentPadding = PaddingValues(vertical = 2.dp)
+                        ) {
+                            items(assignedCategories.size, key = { assignedCategories[it].id }) { index ->
+                                val category = assignedCategories[index]
+                                InputChip(
+                                    selected = true,
+                                    onClick = { selectedIds = selectedIds - category.id },
+                                    label = { Text(category.name) },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Outlined.Close,
+                                            contentDescription = "移除分類",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = InputChipDefaults.inputChipColors(
+                                        selectedContainerColor = WarmSelected,
+                                        selectedLabelColor = Ink
                                     )
-                                    Text(category.name)
-                                }
+                                )
+                            }
+                            items(pendingNewNames.size, key = { "new|" + pendingNewNames[it].lowercase() }) { index ->
+                                val name = pendingNewNames[index]
+                                InputChip(
+                                    selected = true,
+                                    onClick = {
+                                        pendingNewNames = pendingNewNames.filterNot {
+                                            it.equals(name, ignoreCase = true)
+                                        }
+                                    },
+                                    label = { Text(name) },
+                                    trailingIcon = {
+                                        Icon(
+                                            Icons.Outlined.Close,
+                                            contentDescription = "刪除新增分類",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = InputChipDefaults.inputChipColors(
+                                        selectedContainerColor = WarmSelected,
+                                        selectedLabelColor = Ink
+                                    )
+                                )
                             }
                         }
                     }
-                    OutlinedTextField(
-                        value = newNames,
-                        onValueChange = { newNames = it },
+
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        label = { Text("新增分類") },
-                        placeholder = { Text("可用 + 分隔多個分類") }
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newCategoryText,
+                            onValueChange = { newCategoryText = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("新增分類") },
+                            placeholder = { Text("輸入分類名稱") }
+                        )
+                        Button(
+                            onClick = { addCategoryFromInput() },
+                            enabled = newCategoryText.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        ) {
+                            Text("新增")
+                        }
+                    }
+                    Text(
+                        "只顯示這張貼圖自己的分類；點分類標籤上的 × 可移除。",
+                        color = Muted,
+                        style = MaterialTheme.typography.bodySmall
                     )
                     TextButton(
                         onClick = {
@@ -859,10 +937,11 @@ private fun StickerGrid(repo: StickerRepository, list: List<StickerItem>, modifi
             confirmButton = {
                 Button(
                     onClick = {
+                        if (newCategoryText.isNotBlank()) addCategoryFromInput()
                         repo.updateStickerCategories(
                             fresh.id,
                             selectedIds.toList(),
-                            newNames.split('+').map { it.trim() }.filter { it.isNotBlank() }
+                            pendingNewNames
                         )
                         editTarget = null
                     },
@@ -1325,8 +1404,6 @@ private fun installDownloadedApk(context: Context, file: File) {
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
     context.startActivity(intent)
 }
-
-
 
 private fun parseCategoryNames(text: String, delimiter: CategoryDelimiter): List<String> {
     if (text.isBlank()) return emptyList()
