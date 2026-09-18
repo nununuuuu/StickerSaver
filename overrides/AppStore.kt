@@ -44,6 +44,9 @@ class AppStore(context: Context) {
                     )
                 )
             }
+        }.filter { sticker ->
+            sticker.mimeType.equals("image/gif", ignoreCase = true) ||
+                sticker.mediaUrl.substringBefore('?').lowercase().endsWith(".gif")
         }.toMutableList()
     }
 
@@ -62,6 +65,7 @@ class AppStore(context: Context) {
                         note = o.optString("note"),
                         author = o.optString("author").takeIf { it.isNotBlank() },
                         snapshotPath = o.optString("snapshotPath").takeIf { it.isNotBlank() },
+                        postText = o.optString("postText").takeIf { it.isNotBlank() },
                         createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                         lastUsedAt = o.optLong("lastUsedAt").takeIf { it > 0 },
                         stickerIds = buildList { for (j in 0 until ids.length()) add(ids.getString(j)) },
@@ -105,6 +109,7 @@ class AppStore(context: Context) {
                     put("note", s.note)
                     put("author", s.author ?: "")
                     put("snapshotPath", s.snapshotPath ?: "")
+                    put("postText", s.postText ?: "")
                     put("createdAt", s.createdAt)
                     put("lastUsedAt", s.lastUsedAt ?: 0)
                     put("stickerIds", JSONArray(s.stickerIds))
