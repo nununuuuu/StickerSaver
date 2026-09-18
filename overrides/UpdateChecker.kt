@@ -65,8 +65,8 @@ class UpdateChecker(private val context: Context) {
             version = tag,
             releaseUrl = json.optString("html_url"),
             apkUrl = apkUrl,
-            features = parseSection(body, listOf("新功能", "Features", "Added")),
-            fixes = parseSection(body, listOf("修正", "修正功能", "Fixes", "Fixed")),
+            features = parseSection(body, listOf("新增功能", "新功能", "Features", "Added")),
+            fixes = parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed")),
         )
     }
 
