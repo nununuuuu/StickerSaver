@@ -17,6 +17,12 @@ import java.util.concurrent.TimeUnit
 
 private const val TEST_URL = "https://www.threads.com/@ethanzhang688/post/DdYPqUdAXes"
 
+private data class HeaderProfile(
+    val name: String,
+    val userAgent: String,
+    val extraHeaders: Map<String, String> = emptyMap(),
+)
+
 @Composable
 fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
     var log by remember { mutableStateOf("準備測試 DdYPqUdAXes\n") }
@@ -25,10 +31,10 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
 
     MaterialTheme {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("Sticker Saver · HTTP Diagnostic", style = MaterialTheme.typography.titleLarge)
+            Text("Sticker Saver · HTTP A/B Diagnostic", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             Text(
-                "不使用 Jina、不使用 WebView。直接用 Android OkHttp 抓 Threads 原始 HTML，檢查 inline_sticker_fragment。",
+                "不使用 Jina、不使用 WebView。一次比較 4 組 HTTP headers，找出哪組能拿到 Threads 的 inline_sticker preload JSON。",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(Modifier.height(12.dp))
@@ -37,12 +43,12 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
                 onClick = {
                     if (running) return@Button
                     running = true
-                    log = "開始純 HTTP 測試…\n"
+                    log = "開始 A/B 測試…\n"
                     scope.launch {
-                        runCatching { runHttpDiagnostic(TEST_URL) }
+                        runCatching { runHeaderAbDiagnostic(TEST_URL) }
                             .onSuccess { log = it }
                             .onFailure { e ->
-                                log = "HTTP 測試失敗\n" +
+                                log = "診斷失敗\n" +
                                     (e::class.simpleName ?: "Exception") + ": " +
                                     (e.message ?: "unknown error")
                             }
@@ -57,7 +63,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
                     Spacer(Modifier.width(8.dp))
                     Text("測試中…")
                 } else {
-                    Text("測試純 HTTP")
+                    Text("開始 4 組 HTTP 測試")
                 }
             }
 
@@ -74,78 +80,146 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?) {
     }
 }
 
-private suspend fun runHttpDiagnostic(url: String): String = withContext(Dispatchers.IO) {
+private suspend fun runHeaderAbDiagnostic(url: String): String = withContext(Dispatchers.IO) {
+    val mobileUa =
+        "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
+
+    val desktopUa =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+
+    val profiles = listOf(
+        HeaderProfile(
+            name = "A. Android Mobile Chrome",
+            userAgent = mobileUa,
+        ),
+        HeaderProfile(
+            name = "B. Windows Desktop Chrome",
+            userAgent = desktopUa,
+        ),
+        HeaderProfile(
+            name = "C. Desktop + Sec-Fetch",
+            userAgent = desktopUa,
+            extraHeaders = mapOf(
+                "Sec-Fetch-Dest" to "document",
+                "Sec-Fetch-Mode" to "navigate",
+                "Sec-Fetch-Site" to "none",
+                "Sec-Fetch-User" to "?1",
+                "Upgrade-Insecure-Requests" to "1",
+            )
+        ),
+        HeaderProfile(
+            name = "D. Desktop + Browser-like headers",
+            userAgent = desktopUa,
+            extraHeaders = mapOf(
+                "Sec-Fetch-Dest" to "document",
+                "Sec-Fetch-Mode" to "navigate",
+                "Sec-Fetch-Site" to "none",
+                "Sec-Fetch-User" to "?1",
+                "Upgrade-Insecure-Requests" to "1",
+                "Sec-CH-UA" to "\"Chromium\";v=\"140\", \"Google Chrome\";v=\"140\", \"Not=A?Brand\";v=\"24\"",
+                "Sec-CH-UA-Mobile" to "?0",
+                "Sec-CH-UA-Platform" to "\"Windows\"",
+                "Accept-Encoding" to "gzip, deflate, br",
+            )
+        )
+    )
+
     val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
-    val request = Request.Builder()
-        .url(url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36"
-        )
-        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-        .header("Accept-Language", "zh-TW,zh;q=0.9,en;q=0.7")
-        .header("Cache-Control", "no-cache")
-        .build()
+    buildString {
+        appendLine("Target: " + url)
+        appendLine()
 
-    client.newCall(request).execute().use { response ->
-        val body = response.body.string()
-        val inlineCount = Regex("inline_sticker_fragment", RegexOption.IGNORE_CASE)
-            .findAll(body).count()
-        val typeCount = Regex("\\\"fragment_type\\\"\\s*:\\s*\\\"inline_sticker\\\"")
-            .findAll(body).count()
+        profiles.forEach { profile ->
+            appendLine("===== " + profile.name + " =====")
 
-        val rawUrls = Regex("\\\"sticker_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-            .findAll(body)
-            .map { it.groupValues[1] }
-            .toList()
+            try {
+                val builder = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", profile.userAgent)
+                    .header(
+                        "Accept",
+                        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+                    )
+                    .header("Accept-Language", "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7")
+                    .header("Cache-Control", "no-cache")
+                    .header("Pragma", "no-cache")
 
-        val rawIds = Regex("\\\"sticker_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
-            .findAll(body)
-            .map { it.groupValues[1] }
-            .toList()
+                profile.extraHeaders.forEach { (k, v) -> builder.header(k, v) }
 
-        fun decode(value: String): String = value
-            .replace("\\\\/", "/")
-            .replace("\\\\u002F", "/", ignoreCase = true)
-            .replace("\\\\u003A", ":", ignoreCase = true)
-            .replace("\\\\u003D", "=", ignoreCase = true)
-            .replace("\\\\u0026", "&", ignoreCase = true)
+                client.newCall(builder.build()).execute().use { response ->
+                    val body = response.body.string()
 
-        val urls = rawUrls.map(::decode).distinct()
-        val ids = rawIds.distinct()
+                    val relayCount = Regex("RelayPrefetchedStreamCache", RegexOption.IGNORE_CASE)
+                        .findAll(body).count()
+                    val preloaderCount = Regex(
+                        "BarcelonaPostPageTargetQueryRelayPreloader",
+                        RegexOption.IGNORE_CASE
+                    ).findAll(body).count()
+                    val textFragmentsCount = Regex("text_fragments", RegexOption.IGNORE_CASE)
+                        .findAll(body).count()
+                    val inlineCount = Regex("inline_sticker_fragment", RegexOption.IGNORE_CASE)
+                        .findAll(body).count()
+                    val typeCount = Regex(
+                        "\\\"fragment_type\\\"\\s*:\\s*\\\"inline_sticker\\\""
+                    ).findAll(body).count()
 
-        buildString {
-            appendLine("HTTP status: " + response.code)
-            appendLine("Final URL: " + response.request.url)
-            appendLine("Content-Type: " + (response.header("Content-Type") ?: "(none)"))
-            appendLine("HTML bytes/chars: " + body.length)
-            appendLine()
-            appendLine("inline_sticker_fragment: " + inlineCount)
-            appendLine("fragment_type=inline_sticker: " + typeCount)
-            appendLine("sticker_id: " + ids.size)
-            appendLine("sticker_url: " + urls.size)
-            appendLine()
+                    val rawUrls = Regex(
+                        "\\\"sticker_url\\\"\\s*:\\s*\\\"([^\\\"]+)\\\""
+                    ).findAll(body).map { it.groupValues[1] }.toList()
 
-            if (urls.isEmpty()) {
-                appendLine("結果：原始 HTTP HTML 沒抓到 sticker_url")
-                appendLine("contains giphy.com: " + body.contains("giphy.com", ignoreCase = true))
-                appendLine("contains inline_sticker: " + body.contains("inline_sticker", ignoreCase = true))
-            } else {
-                appendLine("結果：成功從原始 HTTP HTML 抓到 Sticker")
-                appendLine()
-                urls.take(40).forEachIndexed { index, stickerUrl ->
-                    val id = ids.getOrNull(index)
-                    appendLine("#" + (index + 1) + (id?.let { "  id=" + it } ?: ""))
-                    appendLine(stickerUrl)
-                    appendLine()
+                    val rawIds = Regex(
+                        "\\\"sticker_id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\""
+                    ).findAll(body).map { it.groupValues[1] }.toList()
+
+                    fun decode(value: String): String = value
+                        .replace("\\\\/", "/")
+                        .replace("\\\\u002F", "/", ignoreCase = true)
+                        .replace("\\\\u003A", ":", ignoreCase = true)
+                        .replace("\\\\u003D", "=", ignoreCase = true)
+                        .replace("\\\\u0026", "&", ignoreCase = true)
+
+                    val urls = rawUrls.map(::decode).distinct()
+                    val ids = rawIds.distinct()
+
+                    appendLine("HTTP: " + response.code)
+                    appendLine("Final URL: " + response.request.url)
+                    appendLine("Content-Type: " + (response.header("Content-Type") ?: "(none)"))
+                    appendLine("HTML chars: " + body.length)
+                    appendLine("RelayPrefetchedStreamCache: " + relayCount)
+                    appendLine("Barcelona preloader: " + preloaderCount)
+                    appendLine("text_fragments: " + textFragmentsCount)
+                    appendLine("inline_sticker_fragment: " + inlineCount)
+                    appendLine("fragment_type=inline_sticker: " + typeCount)
+                    appendLine("sticker_id: " + ids.size)
+                    appendLine("sticker_url: " + urls.size)
+                    appendLine("contains giphy.com: " + body.contains("giphy.com", ignoreCase = true))
+
+                    if (urls.isNotEmpty()) {
+                        appendLine("RESULT: SUCCESS")
+                        urls.take(6).forEachIndexed { index, stickerUrl ->
+                            val id = ids.getOrNull(index)
+                            appendLine(
+                                "#" + (index + 1) +
+                                    (id?.let { " id=" + it } ?: "")
+                            )
+                            appendLine(stickerUrl)
+                        }
+                    } else {
+                        appendLine("RESULT: NO STICKER DATA")
+                    }
                 }
+            } catch (e: Exception) {
+                appendLine("ERROR: " + (e.message ?: e::class.simpleName ?: "unknown"))
             }
+
+            appendLine()
         }
     }
 }
