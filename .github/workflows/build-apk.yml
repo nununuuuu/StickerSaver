@@ -26,11 +26,10 @@ jobs:
           unzip -t project.zip
           mkdir -p project
           unzip -q project.zip -d project
-
           cp overrides/Models.kt project/app/src/main/java/com/local/threadssticker/Models.kt
           cp overrides/AppStore.kt project/app/src/main/java/com/local/threadssticker/AppStore.kt
           base64 --decode overrides/StickerRepository.kt.b64 > project/app/src/main/java/com/local/threadssticker/StickerRepository.kt
-          base64 --decode overrides/ThreadsParser.kt.b64 > project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
+          base64 --decode overrides/ThreadsParser.kt.b64 | gzip --decompress > project/app/src/main/java/com/local/threadssticker/ThreadsParser.kt
           base64 --decode overrides/AppUi.kt.b64 | gzip --decompress > project/app/src/main/java/com/local/threadssticker/AppUi.kt
           cp overrides/UpdateChecker.kt project/app/src/main/java/com/local/threadssticker/UpdateChecker.kt
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
