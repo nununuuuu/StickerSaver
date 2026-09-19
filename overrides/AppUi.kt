@@ -1684,12 +1684,26 @@ private fun StickerGrid(
 private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, stickers: List<StickerItem>) {
     var editing by remember { mutableStateOf<SourceRecord?>(null) }
     var deleting by remember { mutableStateOf<SourceRecord?>(null) }
+    var viewing by remember { mutableStateOf<SourceRecord?>(null) }
 
     Column(Modifier.fillMaxSize()) {
-        Header("來源紀錄")
-        if (sources.isEmpty()) {
+        if (viewing != null) {
+            val source = viewing!!
+            val related = stickers.filter { it.sourceUrl == source.url || it.id in source.stickerIds }.distinctBy { it.id }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { viewing = null }) { Icon(Icons.Outlined.ArrowBack, contentDescription = "返回來源紀錄") }
+                Column(Modifier.weight(1f)) {
+                    Text(source.author?.let { "@$it" } ?: "來源貼圖", fontWeight = FontWeight.Bold, color = Ink)
+                    Text("已導入 " + related.size + " 張貼圖", color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            if (related.isEmpty()) Empty("此來源目前沒有已導入的貼圖")
+            else StickerGrid(repo = repo, list = related, modifier = Modifier.fillMaxSize())
+        } else if (sources.isEmpty()) {
+            Header("來源紀錄")
             Empty("還沒有來源紀錄")
         } else {
+            Header("來源紀錄")
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1701,6 +1715,7 @@ private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, sticke
                         source = source,
                         related = related,
                         onEditNote = { editing = source },
+                        onOpen = { viewing = source },
                         onDelete = { deleting = source },
                     )
                 }
@@ -1774,26 +1789,23 @@ private fun PostSourceCard(
     source: SourceRecord,
     related: List<StickerItem>,
     onEditNote: () -> Unit,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
-    var expanded by remember(source.id) { mutableStateOf(false) }
-    val hasPostText = !source.postText.isNullOrBlank()
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
-                onClick = {
-                    if (hasPostText) expanded = !expanded
-                },
+                onClick = onOpen,
                 onLongClick = onDelete,
             ),
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = WarmCard),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val thumbModel: Any? = source.thumbnailUrl
                     ?: related.firstOrNull()?.localCachePath?.let(::File)
@@ -1803,7 +1815,7 @@ private fun PostSourceCard(
                 Surface(
                     shape = RoundedCornerShape(14.dp),
                     color = Tile,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     if (thumbModel != null) {
                         AsyncImage(
@@ -1833,54 +1845,10 @@ private fun PostSourceCard(
                     )
                 }
 
-                Text(
-                    related.size.toString() + " 張",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Muted
-                )
+                Text(related.size.toString() + " 張  ›", style = MaterialTheme.typography.bodySmall, color = Muted)
             }
 
-            if (hasPostText && expanded) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = source.postText.orEmpty(),
-                    modifier = Modifier.padding(bottom = 4.dp),
-                    color = Ink,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            if (related.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    related.take(3).forEach { sticker ->
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = Tile,
-                            modifier = Modifier.size(76.dp)
-                        ) {
-                            AsyncImage(
-                                sticker.localCachePath?.let(::File) ?: sticker.mediaUrl,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize().padding(4.dp)
-                            )
-                        }
-                    }
-                    if (related.size > 3) {
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = WarmSelected,
-                            modifier = Modifier.size(76.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("+" + (related.size - 3), fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
