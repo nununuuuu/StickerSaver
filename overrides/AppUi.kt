@@ -33,6 +33,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -95,22 +100,19 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
         }
     }
 
-    LaunchedEffect(resumeToken) {
+    LaunchedEffect(Unit) {
         if (checker.shouldAutoCheck()) {
-            delay(2500)
+            delay(600)
             var info: UpdateInfo? = null
-            var success = false
             for (attempt in 0..1) {
                 val result = runCatching { checker.check() }
                 if (result.isSuccess) {
                     info = result.getOrNull()
-                    success = true
                     break
                 }
-                if (attempt == 0) delay(2000)
+                if (attempt == 0) delay(1500)
             }
-            checker.markAutoCheckAttempt()
-            if (success && info != null && !checker.isDismissedToday(info!!.version)) {
+            if (info != null && !checker.isDismissedToday(info!!.version)) {
                 update = info
             }
         }
@@ -213,7 +215,12 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
 
         update?.let { info ->
             AlertDialog(
-                onDismissRequest = { if (!updateDownloading) update = null },
+                onDismissRequest = {
+                    if (!updateDownloading) {
+                        checker.dismissForToday(info.version)
+                        update = null
+                    }
+                },
                 title = { Text("發現新版本 v" + info.version) },
                 text = {
                     LazyColumn(
@@ -396,6 +403,17 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
     var previewSelected by remember { mutableStateOf<Set<String>>(emptySet()) }
     val cancel = remember { AtomicBoolean(false) }
     val scope = rememberCoroutineScope()
+    val previewScrollBoundary = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset = available
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
+        }
+    }
 
     fun mediaKey(url: String): String = url.substringBefore('?').substringBefore('#')
 
@@ -461,7 +479,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         input,
                         { input = it },
                         Modifier.fillMaxWidth(),
-                        placeholder = { Text("貼上 Threads 貼文連結") },
+                        placeholder = { Text("貼上 Threads 貼文連結", color = Muted.copy(alpha = .55f)) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Accent,
                             unfocusedBorderColor = Muted,
@@ -476,7 +494,16 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         onValueChange = { if (!loading && !importing) categoryText = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        placeholder = { Text("例如：寶可夢+貓咪+迷因") },
+                        placeholder = {
+                            Text(
+                                when (categoryDelimiter) {
+                                    CategoryDelimiter.PLUS -> "例如：寶可夢+貓咪+迷因"
+                                    CategoryDelimiter.SLASH -> "例如：寶可夢/貓咪/迷因"
+                                    CategoryDelimiter.SPACE -> "例如：寶可夢 貓咪 迷因"
+                                },
+                                color = Muted.copy(alpha = .55f)
+                            )
+                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Accent,
                             unfocusedBorderColor = Muted,
@@ -674,7 +701,8 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                                 columns = GridCells.Fixed(4),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height((rows * 86).dp),
+                                    .height((rows * 86).dp)
+                                    .nestedScroll(previewScrollBoundary),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -1821,6 +1849,8 @@ private fun Settings(
     val context = LocalContext.current
     var about by remember { mutableStateOf(false) }
     var categoryManager by remember { mutableStateOf(false) }
+    var clearCacheConfirm by remember { mutableStateOf(false) }
+    var cacheSize by remember { mutableLongStateOf(repo.stickerCacheSizeBytes()) }
     val prefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
     var clipboardMonitor by remember { mutableStateOf(prefs.getBoolean("clipboard_monitor", false)) }
 
@@ -1845,12 +1875,77 @@ private fun Settings(
             categoryManager = true
         }
         Spacer(Modifier.height(10.dp))
+        SettingRow(
+            "清除快取",
+            "已下載貼圖快取 · " + formatBytes(cacheSize),
+            Icons.Outlined.DeleteSweep
+        ) {
+            cacheSize = repo.stickerCacheSizeBytes()
+            clearCacheConfirm = true
+        }
+        Spacer(Modifier.height(10.dp))
         SettingRow("關於", "版本 " + checker.currentVersion(), Icons.Outlined.Info) { about = true }
     }
 
     if (categoryManager) {
         CategoryManagerDialog(repo = repo, dismiss = { categoryManager = false })
     }
+
+    if (clearCacheConfirm) {
+        AlertDialog(
+            onDismissRequest = { clearCacheConfirm = false },
+            containerColor = Paper,
+            tonalElevation = 0.dp,
+            title = { Text("清除貼圖快取？") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFFFFE6E3)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                Icons.Outlined.WarningAmber,
+                                contentDescription = null,
+                                tint = Color(0xFF9B1C1C)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "清除後可能導致貼圖鍵盤暫時無法正常讀取尚未重新建立快取的貼圖。",
+                                color = Color(0xFF8A1717),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                    Text(
+                        "這只會刪除已下載的貼圖媒體快取（目前 " + formatBytes(cacheSize) + "），不會刪除貼圖庫紀錄、分類或來源資料。之後使用貼圖時可重新下載並建立快取。",
+                        color = Ink
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        repo.clearStickerCache()
+                        cacheSize = repo.stickerCacheSizeBytes()
+                        clearCacheConfirm = false
+                        Toast.makeText(context, "貼圖快取已清除", Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = Color.White
+                    )
+                ) { Text("清除快取") }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearCacheConfirm = false }) { Text("取消", color = Ink) }
+            }
+        )
+    }
+
     if (about) About(checker, { about = false }, found, failed)
 }
 
@@ -2083,67 +2178,274 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
 
 @Composable
 private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInfo) -> Unit, failed: (String) -> Unit) {
+    val context = LocalContext.current
     var auto by remember { mutableStateOf(checker.autoCheckEnabled) }
     var checking by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    var lastChecked by remember { mutableStateOf(checker.lastSuccessfulCheckText()) }
+    var historyExpanded by remember { mutableStateOf(false) }
+    var historyLoading by remember { mutableStateOf(false) }
+    var history by remember { mutableStateOf<List<ReleaseHistoryItem>>(emptyList()) }
+    var historyError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val buildNumber = remember {
+        runCatching {
+            @Suppress("DEPRECATION")
+            val info = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode else info.versionCode.toLong()
+        }.getOrDefault(0L)
+    }
 
     AlertDialog(
         onDismissRequest = dismiss,
-        title = { Text("關於") },
+        containerColor = Paper,
+        tonalElevation = 0.dp,
+        title = { Text("關於", color = Ink, fontWeight = FontWeight.Bold) },
         text = {
-            Column {
-                Text("Sticker Saver", fontWeight = FontWeight.SemiBold)
-                Text("版本 " + checker.currentVersion())
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("自動更新")
-                        Text("啟動 App 時自動檢查更新", style = MaterialTheme.typography.bodySmall)
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("Sticker Saver", color = Ink, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "版本 " + checker.currentVersion() + " · Build " + buildNumber,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Muted
+                            )
+                        }
                     }
-                    Switch(
-                        auto,
-                        {
-                            auto = it
-                            checker.autoCheckEnabled = it
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = Accent
-                        )
-                    )
                 }
-                Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = {
-                        if (!checking) {
-                            checking = true
-                            status = null
-                            scope.launch {
-                                runCatching { checker.check() }
-                                    .onSuccess {
-                                        if (it == null) status = "目前已是最新版本"
-                                        else {
-                                            dismiss()
-                                            found(it)
+
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("自動更新", color = Ink, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "啟動 App 時自動檢查更新",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Muted
+                                    )
+                                }
+                                Switch(
+                                    checked = auto,
+                                    onCheckedChange = {
+                                        auto = it
+                                        checker.autoCheckEnabled = it
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Accent,
+                                        uncheckedThumbColor = Muted,
+                                        uncheckedTrackColor = WarmSelected,
+                                        uncheckedBorderColor = Muted.copy(alpha = .35f)
+                                    )
+                                )
+                            }
+
+                            HorizontalDivider(
+                                Modifier.padding(vertical = 10.dp),
+                                color = Muted.copy(alpha = .16f)
+                            )
+
+                            lastChecked?.let {
+                                Text(
+                                    "最近檢查：$it",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Muted
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
+
+                            Button(
+                                onClick = {
+                                    if (!checking) {
+                                        checking = true
+                                        status = null
+                                        scope.launch {
+                                            runCatching { checker.check() }
+                                                .onSuccess {
+                                                    lastChecked = checker.lastSuccessfulCheckText()
+                                                    if (it == null) status = "目前已是最新版本"
+                                                    else {
+                                                        dismiss()
+                                                        found(it)
+                                                    }
+                                                }
+                                                .onFailure { failed(it.message ?: "檢查更新失敗") }
+                                            checking = false
                                         }
                                     }
-                                    .onFailure { failed(it.message ?: "檢查更新失敗") }
-                                checking = false
+                                },
+                                enabled = !checking,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Accent,
+                                    contentColor = Color.White,
+                                    disabledContainerColor = WarmSelected,
+                                    disabledContentColor = Muted
+                                )
+                            ) {
+                                if (checking) {
+                                    CircularProgressIndicator(
+                                        Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White
+                                    )
+                                } else {
+                                    Icon(Icons.Outlined.SystemUpdateAlt, null)
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(if (checking) "檢查中…" else "檢查更新")
+                            }
+                            status?.let {
+                                Text(
+                                    it,
+                                    Modifier.padding(top = 8.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Muted
+                                )
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (checking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Outlined.SystemUpdateAlt, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (checking) "檢查中…" else "檢查更新")
+                    }
                 }
-                status?.let { Text(it, Modifier.padding(top = 8.dp)) }
+
+                item {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp))
+                            .clickable {
+                                val expanding = !historyExpanded
+                                historyExpanded = expanding
+                                if (expanding && history.isEmpty() && !historyLoading) {
+                                    historyLoading = true
+                                    historyError = null
+                                    scope.launch {
+                                        runCatching { checker.recentReleases(5) }
+                                            .onSuccess { history = it }
+                                            .onFailure { historyError = it.message ?: "讀取更新紀錄失敗" }
+                                        historyLoading = false
+                                    }
+                                }
+                            },
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Outlined.History, contentDescription = null, tint = Accent)
+                                Spacer(Modifier.width(9.dp))
+                                Text(
+                                    "更新紀錄",
+                                    color = Ink,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    if (historyExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                    contentDescription = if (historyExpanded) "收合" else "展開",
+                                    tint = Muted
+                                )
+                            }
+
+                            if (historyExpanded) {
+                                Spacer(Modifier.height(10.dp))
+                                when {
+                                    historyLoading -> {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            CircularProgressIndicator(
+                                                Modifier.size(17.dp),
+                                                strokeWidth = 2.dp,
+                                                color = Accent
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("讀取中…", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    historyError != null -> {
+                                        Text(
+                                            historyError.orEmpty(),
+                                            color = MaterialTheme.colorScheme.error,
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    history.isEmpty() -> {
+                                        Text("目前沒有更新紀錄", color = Muted, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    else -> {
+                                        history.take(5).forEachIndexed { index, item ->
+                                            if (index > 0) {
+                                                HorizontalDivider(
+                                                    Modifier.padding(vertical = 10.dp),
+                                                    color = Muted.copy(alpha = .16f)
+                                                )
+                                            }
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    "v" + item.version,
+                                                    color = Ink,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Spacer(Modifier.weight(1f))
+                                                item.releaseDate?.let {
+                                                    Text(
+                                                        it,
+                                                        color = Muted,
+                                                        style = MaterialTheme.typography.bodySmall
+                                                    )
+                                                }
+                                            }
+                                            if (item.changes.isEmpty()) {
+                                                Text(
+                                                    "此版本未提供簡短更新內容",
+                                                    color = Muted,
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            } else {
+                                                item.changes.forEach { change ->
+                                                    Text(
+                                                        "• " + change,
+                                                        color = Muted,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        modifier = Modifier.padding(top = 3.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
-        confirmButton = { TextButton(onClick = dismiss) { Text("完成") } }
+        confirmButton = {
+            TextButton(onClick = dismiss) { Text("完成", color = Ink) }
+        }
     )
 }
 
@@ -2201,6 +2503,19 @@ private fun Empty(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text, color = Muted)
     }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit++
+    }
+    return if (unit == 0) bytes.toString() + " " + units[unit]
+    else String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
 }
 
 private fun extractThreadsUrl(text: String): String? =
