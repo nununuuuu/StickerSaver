@@ -1186,7 +1186,8 @@ private fun StickerGrid(
 
         AlertDialog(
             onDismissRequest = { editTarget = null },
-            title = { Text("編輯貼圖") },
+            containerColor = Paper,
+            tonalElevation = 0.dp,
             text = {
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = 500.dp),
@@ -1195,7 +1196,7 @@ private fun StickerGrid(
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = Tile,
-                        modifier = Modifier.size(150.dp).align(Alignment.CenterHorizontally)
+                        modifier = Modifier.size(190.dp).align(Alignment.CenterHorizontally)
                     ) {
                         AsyncImage(
                             model = fresh.localCachePath?.let(::File) ?: fresh.mediaUrl,
@@ -1234,6 +1235,8 @@ private fun StickerGrid(
                                         )
                                     },
                                     colors = InputChipDefaults.inputChipColors(
+                                        containerColor = Tile,
+                                        labelColor = Ink,
                                         selectedContainerColor = WarmSelected,
                                         selectedLabelColor = Ink
                                     )
@@ -1276,12 +1279,23 @@ private fun StickerGrid(
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             label = { Text("新增分類") },
-                            placeholder = { Text("輸入分類名稱") }
+                            placeholder = { Text("輸入分類名稱") },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Accent,
+                                unfocusedBorderColor = Muted,
+                                focusedContainerColor = Tile,
+                                unfocusedContainerColor = Tile
+                            )
                         )
                         Button(
                             onClick = { addCategoryFromInput() },
                             enabled = newCategoryText.isNotBlank(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Accent,
+                                contentColor = Color.White,
+                                disabledContainerColor = WarmCard,
+                                disabledContentColor = Muted
+                            )
                         ) {
                             Text("新增")
                         }
