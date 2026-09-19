@@ -195,10 +195,33 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
         clipboardPromptUrl?.let { url ->
             AlertDialog(
                 onDismissRequest = { clipboardPromptUrl = null },
-                title = { Text("偵測到 Threads 連結") },
-                text = { Text("要貼入 Sticker Saver 嗎？") },
+                containerColor = Paper,
+                tonalElevation = 0.dp,
+                shape = RoundedCornerShape(28.dp),
+                title = {
+                    Text(
+                        "偵測到 Threads 連結",
+                        color = Ink,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
+                    ) {
+                        Text(
+                            "要貼入 Sticker Saver 嗎？",
+                            modifier = Modifier.padding(14.dp),
+                            color = Ink
+                        )
+                    }
+                },
                 dismissButton = {
-                    TextButton(onClick = { clipboardPromptUrl = null }) { Text("取消") }
+                    TextButton(onClick = { clipboardPromptUrl = null }) {
+                        Text("取消", color = Ink)
+                    }
                 },
                 confirmButton = {
                     Button(
@@ -207,7 +230,11 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                             tab = Tab.HOME
                             clipboardPromptUrl = null
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color.White
+                        )
                     ) { Text("貼上") }
                 }
             )
@@ -221,48 +248,88 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                         update = null
                     }
                 },
-                title = { Text("發現新版本 v" + info.version) },
+                containerColor = Paper,
+                tonalElevation = 0.dp,
+                shape = RoundedCornerShape(28.dp),
+                title = {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            "發現新版本 v" + info.version,
+                            color = Ink,
+                            fontWeight = FontWeight.Bold
+                        )
+                        info.releaseDate?.let { date ->
+                            Text(
+                                "更新日期：$date",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Muted
+                            )
+                        }
+                    }
+                },
                 text = {
                     LazyColumn(
-                        modifier = Modifier.heightIn(max = 460.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 440.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        info.releaseDate?.let { date ->
-                            item {
-                                Text(
-                                    "更新日期：$date",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Muted
-                                )
-                            }
-                        }
-
                         if (info.features.isNotEmpty()) {
                             item {
-                                Text("新增功能", fontWeight = FontWeight.Bold)
-                            }
-                            items(info.features.size) { index ->
-                                Text("• " + info.features[index])
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = WarmCard
+                                ) {
+                                    Column(
+                                        Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text("新增功能", color = Ink, fontWeight = FontWeight.Bold)
+                                        info.features.forEach { feature ->
+                                            Text(
+                                                "• " + feature,
+                                                color = Ink.copy(alpha = .88f),
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
                         if (info.fixes.isNotEmpty()) {
                             item {
-                                Spacer(Modifier.height(2.dp))
-                                Text("修正項目", fontWeight = FontWeight.Bold)
-                            }
-                            items(info.fixes.size) { index ->
-                                Text("• " + info.fixes[index])
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = WarmCard
+                                ) {
+                                    Column(
+                                        Modifier.padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text("修正項目", color = Ink, fontWeight = FontWeight.Bold)
+                                        info.fixes.forEach { fix ->
+                                            Text(
+                                                "• " + fix,
+                                                color = Ink.copy(alpha = .88f),
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
 
                         item {
                             Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = Color(0xFFFFE1E1),
+                                shape = RoundedCornerShape(18.dp),
+                                color = Color(0xFFFFE6E3),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(Modifier.padding(12.dp)) {
+                                Column(
+                                    Modifier.padding(14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
                                             Icons.Outlined.WarningAmber,
@@ -276,13 +343,11 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
-                                    Spacer(Modifier.height(5.dp))
                                     Text(
                                         "• 未及時更新可能導致部分功能無法正常使用",
                                         color = Color(0xFF8A1717),
                                         style = MaterialTheme.typography.bodySmall
                                     )
-                                    Spacer(Modifier.height(4.dp))
                                     Text(
                                         "• 若選擇取消更新，可在「關於」內自行手動更新",
                                         color = Color(0xFF8A1717),
@@ -294,19 +359,27 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
 
                         if (updateDownloading || downloadedApk != null) {
                             item {
-                                Spacer(Modifier.height(4.dp))
-                                LinearProgressIndicator(
-                                    progress = { updateProgress / 100f },
+                                Surface(
                                     modifier = Modifier.fillMaxWidth(),
-                                    color = Accent,
-                                    trackColor = WarmSelected
-                                )
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    if (downloadedApk != null) "下載完成，準備安裝"
-                                    else "下載中 $updateProgress%",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = WarmCard
+                                ) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        LinearProgressIndicator(
+                                            progress = { updateProgress / 100f },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            color = Accent,
+                                            trackColor = WarmSelected
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            if (downloadedApk != null) "下載完成，準備安裝"
+                                            else "下載中 $updateProgress%",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Muted
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -318,7 +391,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                                 checker.dismissForToday(info.version)
                                 update = null
                             }
-                        ) { Text("取消") }
+                        ) { Text("取消", color = Ink) }
                     }
                 },
                 confirmButton = {
@@ -345,7 +418,13 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                             }
                         },
                         enabled = !updateDownloading,
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color.White,
+                            disabledContainerColor = WarmSelected,
+                            disabledContentColor = Muted
+                        )
                     ) {
                         Text(if (downloadedApk != null) "安裝" else if (updateDownloading) "下載中…" else "更新")
                     }
@@ -356,9 +435,29 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
         error?.let { msg ->
             AlertDialog(
                 onDismissRequest = { error = null },
-                title = { Text("發生錯誤") },
-                text = { Text(msg) },
-                confirmButton = { TextButton(onClick = { error = null }) { Text("知道了") } }
+                containerColor = Paper,
+                tonalElevation = 0.dp,
+                shape = RoundedCornerShape(28.dp),
+                title = { Text("發生錯誤", color = Ink, fontWeight = FontWeight.Bold) },
+                text = {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
+                    ) {
+                        Text(msg, Modifier.padding(14.dp), color = Ink)
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { error = null },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color.White
+                        )
+                    ) { Text("知道了") }
+                }
             )
         }
     }
@@ -900,7 +999,9 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                     )
                     DropdownMenu(
                         expanded = categoryMenu,
-                        onDismissRequest = { categoryMenu = false }
+                        onDismissRequest = { categoryMenu = false },
+                        containerColor = Paper,
+                        tonalElevation = 0.dp
                     ) {
                         DropdownMenuItem(
                             text = { Text("全部") },
@@ -1046,21 +1147,15 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
     }
 
     if (batchDeleteConfirm) {
-        AlertDialog(
-            onDismissRequest = { batchDeleteConfirm = false },
-            title = { Text("刪除所選貼圖？") },
-            text = { Text("將刪除 " + selectedStickerIds.size + " 張貼圖與其本機快取。分類本身不會在這裡刪除。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    repo.removeStickers(selectedStickerIds)
-                    leaveSelectionMode()
-                }) {
-                    Text("刪除", color = MaterialTheme.colorScheme.error)
-                }
+        DangerConfirmDialog(
+            title = "刪除所選貼圖？",
+            message = "將刪除 " + selectedStickerIds.size + " 張貼圖與其本機快取。分類本身不會在這裡刪除。",
+            confirmLabel = "刪除",
+            onConfirm = {
+                repo.removeStickers(selectedStickerIds)
+                leaveSelectionMode()
             },
-            dismissButton = {
-                TextButton(onClick = { batchDeleteConfirm = false }) { Text("取消") }
-            }
+            onDismiss = { batchDeleteConfirm = false }
         )
     }
 }
@@ -1571,19 +1666,15 @@ private fun StickerGrid(
     }
 
     deleteTarget?.let { sticker ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text("刪除這張貼圖？") },
-            text = { Text("會從 Sticker Saver 貼圖庫移除，並刪除本機貼圖檔案。") },
-            confirmButton = {
-                TextButton(onClick = {
-                    repo.removeSticker(sticker.id)
-                    deleteTarget = null
-                }) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+        DangerConfirmDialog(
+            title = "刪除這張貼圖？",
+            message = "會從 Sticker Saver 貼圖庫移除，並刪除本機貼圖檔案。",
+            confirmLabel = "刪除",
+            onConfirm = {
+                repo.removeSticker(sticker.id)
+                deleteTarget = null
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
-            }
+            onDismiss = { deleteTarget = null }
         )
     }
 }
@@ -1621,41 +1712,58 @@ private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, sticke
         var note by remember(source.id) { mutableStateOf(source.note) }
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("備註") },
-            text = { OutlinedTextField(note, { note = it }, minLines = 3) },
-            confirmButton = {
-                TextButton(onClick = {
-                    repo.updateNote(source.id, note)
-                    editing = null
-                }) { Text("儲存") }
+            containerColor = Paper,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
+            title = { Text("備註", color = Ink, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = Muted,
+                        focusedContainerColor = Tile,
+                        unfocusedContainerColor = Tile
+                    )
+                )
             },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("取消") } }
+            confirmButton = {
+                Button(
+                    onClick = {
+                        repo.updateNote(source.id, note)
+                        editing = null
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Accent,
+                        contentColor = Color.White
+                    )
+                ) { Text("儲存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editing = null }) { Text("取消", color = Ink) }
+            }
         )
     }
 
     deleting?.let { source ->
         val count = stickers.count { it.sourceUrl == source.url || it.id in source.stickerIds }
-        AlertDialog(
-            onDismissRequest = { deleting = null },
-            title = { Text("刪除這筆來源？") },
-            text = {
-                Text(
-                    if (count > 0) {
-                        "會同時刪除這篇來源與其 $count 張貼圖及本機快取。"
-                    } else {
-                        "會刪除這篇來源紀錄。"
-                    }
-                )
+        DangerConfirmDialog(
+            title = "刪除這筆來源？",
+            message = if (count > 0) {
+                "會同時刪除這篇來源與其 $count 張貼圖及本機快取。"
+            } else {
+                "會刪除這篇來源紀錄。"
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    repo.removeSource(source.id)
-                    deleting = null
-                }) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+            confirmLabel = "刪除",
+            onConfirm = {
+                repo.removeSource(source.id)
+                deleting = null
             },
-            dismissButton = {
-                TextButton(onClick = { deleting = null }) { Text("取消") }
-            }
+            onDismiss = { deleting = null }
         )
     }
 }
@@ -1850,6 +1958,7 @@ private fun Settings(
     var about by remember { mutableStateOf(false) }
     var categoryManager by remember { mutableStateOf(false) }
     var clearCacheConfirm by remember { mutableStateOf(false) }
+    var clearStickerDataConfirm by remember { mutableStateOf(false) }
     var cacheSize by remember { mutableLongStateOf(repo.stickerCacheSizeBytes()) }
     val prefs = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
     var clipboardMonitor by remember { mutableStateOf(prefs.getBoolean("clipboard_monitor", false)) }
@@ -1884,6 +1993,14 @@ private fun Settings(
             clearCacheConfirm = true
         }
         Spacer(Modifier.height(10.dp))
+        DangerSettingRow(
+            title = "清除貼圖資料",
+            sub = "刪除貼圖、來源、分類與相關本機檔案",
+            icon = Icons.Outlined.DeleteForever
+        ) {
+            clearStickerDataConfirm = true
+        }
+        Spacer(Modifier.height(10.dp))
         SettingRow("關於", "版本 " + checker.currentVersion(), Icons.Outlined.Info) { about = true }
     }
 
@@ -1896,32 +2013,33 @@ private fun Settings(
             onDismissRequest = { clearCacheConfirm = false },
             containerColor = Paper,
             tonalElevation = 0.dp,
-            title = { Text("清除貼圖快取？") },
+            shape = RoundedCornerShape(28.dp),
+            title = { Text("清除貼圖快取？", color = Ink, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFFFFE6E3)
+                        color = WarmCard
                     ) {
                         Row(
                             Modifier.fillMaxWidth().padding(12.dp),
                             verticalAlignment = Alignment.Top
                         ) {
                             Icon(
-                                Icons.Outlined.WarningAmber,
+                                Icons.Outlined.Info,
                                 contentDescription = null,
-                                tint = Color(0xFF9B1C1C)
+                                tint = Accent
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                "清除後可能導致貼圖鍵盤暫時無法正常讀取尚未重新建立快取的貼圖。",
-                                color = Color(0xFF8A1717),
+                                "清除後，貼圖會在下次使用時重新下載並建立快取，第一次載入可能較慢。",
+                                color = Ink,
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
                     }
                     Text(
-                        "這只會刪除已下載的貼圖媒體快取（目前 " + formatBytes(cacheSize) + "），不會刪除貼圖庫紀錄、分類或來源資料。之後使用貼圖時可重新下載並建立快取。",
+                        "這只會刪除已下載的貼圖媒體快取（目前 " + formatBytes(cacheSize) + "），不會刪除貼圖庫紀錄、分類或來源資料。",
                         color = Ink
                     )
                 }
@@ -1934,8 +2052,9 @@ private fun Settings(
                         clearCacheConfirm = false
                         Toast.makeText(context, "貼圖快取已清除", Toast.LENGTH_SHORT).show()
                     },
+                    shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
+                        containerColor = Accent,
                         contentColor = Color.White
                     )
                 ) { Text("清除快取") }
@@ -1943,6 +2062,20 @@ private fun Settings(
             dismissButton = {
                 TextButton(onClick = { clearCacheConfirm = false }) { Text("取消", color = Ink) }
             }
+        )
+    }
+
+    if (clearStickerDataConfirm) {
+        DangerConfirmDialog(
+            title = "清除所有貼圖資料？",
+            message = "將刪除所有貼圖、已下載檔案、來源紀錄、來源快照、分類與相關備註。App 設定會保留。此操作無法復原。",
+            confirmLabel = "清除貼圖資料",
+            onConfirm = {
+                repo.clearStickerData()
+                cacheSize = 0L
+                clearStickerDataConfirm = false
+            },
+            onDismiss = { clearStickerDataConfirm = false }
         )
     }
 
@@ -2184,6 +2317,7 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
     var status by remember { mutableStateOf<String?>(null) }
     var lastChecked by remember { mutableStateOf(checker.lastSuccessfulCheckText()) }
     var historyExpanded by remember { mutableStateOf(false) }
+    var expandedVersions by remember { mutableStateOf<Set<String>>(emptySet()) }
     var historyLoading by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<ReleaseHistoryItem>>(emptyList()) }
     var historyError by remember { mutableStateOf<String?>(null) }
@@ -2200,6 +2334,7 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
         onDismissRequest = dismiss,
         containerColor = Paper,
         tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("關於", color = Ink, fontWeight = FontWeight.Bold) },
         text = {
             LazyColumn(
@@ -2328,29 +2463,31 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
 
                 item {
                     Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp))
-                            .clickable {
-                                val expanding = !historyExpanded
-                                historyExpanded = expanding
-                                if (expanding && history.isEmpty() && !historyLoading) {
-                                    historyLoading = true
-                                    historyError = null
-                                    scope.launch {
-                                        runCatching { checker.recentReleases(5) }
-                                            .onSuccess { history = it }
-                                            .onFailure { historyError = it.message ?: "讀取更新紀錄失敗" }
-                                        historyLoading = false
-                                    }
-                                }
-                            },
+                        modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(18.dp),
                         color = WarmCard
                     ) {
                         Column(Modifier.padding(14.dp)) {
                             Row(
-                                Modifier.fillMaxWidth(),
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        val expanding = !historyExpanded
+                                        historyExpanded = expanding
+                                        if (!expanding) expandedVersions = emptySet()
+                                        if (expanding && history.isEmpty() && !historyLoading) {
+                                            historyLoading = true
+                                            historyError = null
+                                            scope.launch {
+                                                runCatching { checker.recentReleases(5) }
+                                                    .onSuccess { history = it }
+                                                    .onFailure { historyError = it.message ?: "讀取更新紀錄失敗" }
+                                                historyLoading = false
+                                            }
+                                        }
+                                    }
+                                    .padding(vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(Icons.Outlined.History, contentDescription = null, tint = Accent)
@@ -2396,42 +2533,64 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
                                         history.take(5).forEachIndexed { index, item ->
                                             if (index > 0) {
                                                 HorizontalDivider(
-                                                    Modifier.padding(vertical = 10.dp),
+                                                    Modifier.padding(vertical = 6.dp),
                                                     color = Muted.copy(alpha = .16f)
                                                 )
                                             }
-                                            Row(
-                                                Modifier.fillMaxWidth(),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    "v" + item.version,
-                                                    color = Ink,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                                Spacer(Modifier.weight(1f))
-                                                item.releaseDate?.let {
+                                            val expanded = item.version in expandedVersions
+                                            Column {
+                                                Row(
+                                                    Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .clickable {
+                                                            expandedVersions =
+                                                                if (expanded) expandedVersions - item.version
+                                                                else expandedVersions + item.version
+                                                        }
+                                                        .padding(vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
                                                     Text(
-                                                        it,
-                                                        color = Muted,
-                                                        style = MaterialTheme.typography.bodySmall
+                                                        "v" + item.version,
+                                                        color = Ink,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Spacer(Modifier.weight(1f))
+                                                    item.releaseDate?.let {
+                                                        Text(
+                                                            it,
+                                                            color = Muted,
+                                                            style = MaterialTheme.typography.bodySmall
+                                                        )
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+                                                    Icon(
+                                                        if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                                                        contentDescription = if (expanded) "收合版本" else "展開版本",
+                                                        tint = Muted,
+                                                        modifier = Modifier.size(20.dp)
                                                     )
                                                 }
-                                            }
-                                            if (item.changes.isEmpty()) {
-                                                Text(
-                                                    "此版本未提供簡短更新內容",
-                                                    color = Muted,
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
-                                            } else {
-                                                item.changes.forEach { change ->
-                                                    Text(
-                                                        "• " + change,
-                                                        color = Muted,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        modifier = Modifier.padding(top = 3.dp)
-                                                    )
+
+                                                if (expanded) {
+                                                    if (item.changes.isEmpty()) {
+                                                        Text(
+                                                            "此版本未提供簡短更新內容",
+                                                            color = Muted,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            modifier = Modifier.padding(start = 2.dp, bottom = 4.dp)
+                                                        )
+                                                    } else {
+                                                        item.changes.forEach { change ->
+                                                            Text(
+                                                                "• " + change,
+                                                                color = Muted,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                modifier = Modifier.padding(start = 2.dp, top = 3.dp)
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -2447,6 +2606,83 @@ private fun About(checker: UpdateChecker, dismiss: () -> Unit, found: (UpdateInf
             TextButton(onClick = dismiss) { Text("完成", color = Ink) }
         }
     )
+}
+
+@Composable
+private fun DangerConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Paper,
+        tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
+        title = { Text(title, color = Ink, fontWeight = FontWeight.Bold) },
+        text = {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = Color(0xFFFFE6E3)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Outlined.WarningAmber,
+                        contentDescription = null,
+                        tint = Color(0xFF9B1C1C)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        message,
+                        color = Color(0xFF7F1D1D)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = Color.White
+                )
+            ) { Text(confirmLabel) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消", color = Ink) }
+        }
+    )
+}
+
+@Composable
+private fun DangerSettingRow(
+    title: String,
+    sub: String,
+    icon: ImageVector,
+    click: () -> Unit
+) {
+    val danger = MaterialTheme.colorScheme.error
+    Surface(
+        Modifier.padding(horizontal = 16.dp).fillMaxWidth().clickable(onClick = click),
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFFFFF3F1)
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = danger)
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold, color = danger)
+                Text(sub, style = MaterialTheme.typography.bodySmall, color = Color(0xFF8A4A45))
+            }
+            Icon(Icons.Outlined.ChevronRight, null, tint = danger)
+        }
+    }
 }
 
 @Composable
