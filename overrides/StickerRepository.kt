@@ -212,6 +212,27 @@ class StickerRepository(private val context: Context) {
         publish(updated, _sources.value)
     }
 
+    fun stickerCacheSizeBytes(): Long =
+        _stickers.value
+            .mapNotNull { it.localCachePath }
+            .distinct()
+            .sumOf { path -> runCatching { File(path).takeIf { it.exists() }?.length() ?: 0L }.getOrDefault(0L) }
+
+    fun clearStickerCache(): Long {
+        val paths = _stickers.value.mapNotNull { it.localCachePath }.distinct()
+        val clearedBytes = paths.sumOf { path ->
+            runCatching {
+                val file = File(path)
+                val size = if (file.exists()) file.length() else 0L
+                file.delete()
+                size
+            }.getOrDefault(0L)
+        }
+        _stickers.value = _stickers.value.map { it.copy(localCachePath = null) }
+        persist()
+        return clearedBytes
+    }
+
     fun removeStickers(stickerIds: Set<String>) {
         if (stickerIds.isEmpty()) return
         val removed = _stickers.value.filter { it.id in stickerIds }
