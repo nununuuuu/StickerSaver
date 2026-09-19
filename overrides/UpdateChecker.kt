@@ -22,6 +22,12 @@ data class UpdateInfo(
     val fixes: List<String>,
 )
 
+data class ReleaseHistoryItem(
+    val version: String,
+    val releaseDate: String?,
+    val changes: List<String>,
+)
+
 class UpdateChecker(private val context: Context) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -39,23 +45,20 @@ class UpdateChecker(private val context: Context) {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
     }.getOrDefault("0.0.0")
 
-    fun shouldAutoCheck(now: Long = System.currentTimeMillis()): Boolean {
-        if (!autoCheckEnabled) return false
+    fun shouldAutoCheck(): Boolean = autoCheckEnabled
 
-        // 安裝完一個新版本後，立即允許再次檢查。
-        // 這樣同一天若又發布下一版，不會被前一版留下的 6 小時間隔擋住。
-        val checkedAppVersion = prefs.getString("last_checked_app_version", null)
-        if (checkedAppVersion != currentVersion()) return true
-
-        val last = prefs.getLong("last_auto_check_at", 0L)
-        return last <= 0L || now - last >= AUTO_CHECK_INTERVAL_MS
+    fun markSuccessfulCheck(now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("last_successful_check_at", now).apply()
     }
 
-    fun markAutoCheckAttempt(now: Long = System.currentTimeMillis()) {
-        prefs.edit()
-            .putLong("last_auto_check_at", now)
-            .putString("last_checked_app_version", currentVersion())
-            .apply()
+    fun lastSuccessfulCheckText(): String? {
+        val last = prefs.getLong("last_successful_check_at", 0L)
+        if (last <= 0L) return null
+        return runCatching {
+            java.time.Instant.ofEpochMilli(last)
+                .atZone(ZoneId.of("Asia/Taipei"))
+                .format(DateTimeFormatter.ofPattern("MM/dd HH:mm"))
+        }.getOrNull()
     }
 
     fun dismissForToday(version: String) {
@@ -82,6 +85,8 @@ class UpdateChecker(private val context: Context) {
             JSONObject(response.body.string())
         }
 
+        markSuccessfulCheck()
+
         val tag = json.optString("tag_name").removePrefix("v")
         if (tag.isBlank() || compareVersions(tag, currentVersion()) <= 0) return@withContext null
 
@@ -106,6 +111,38 @@ class UpdateChecker(private val context: Context) {
             features = parseSection(body, listOf("新增功能", "新功能", "Features", "Added")),
             fixes = parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed")),
         )
+    }
+
+    suspend fun recentReleases(limit: Int = 5): List<ReleaseHistoryItem> = withContext(Dispatchers.IO) {
+        val safeLimit = limit.coerceIn(1, 10)
+        val request = Request.Builder()
+            .url("https://api.github.com/repos/nununuuuu/StickerSaver/releases?per_page=" + safeLimit)
+            .header("Accept", "application/vnd.github+json")
+            .header("User-Agent", "StickerSaver/" + currentVersion())
+            .header("Cache-Control", "no-cache")
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("讀取更新紀錄失敗：" + response.code)
+            val array = org.json.JSONArray(response.body.string())
+            buildList {
+                for (i in 0 until minOf(array.length(), safeLimit)) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val body = item.optString("body")
+                    val changes = (
+                        parseSection(body, listOf("新增功能", "新功能", "Features", "Added")) +
+                        parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed"))
+                    ).distinct().take(6)
+                    add(
+                        ReleaseHistoryItem(
+                            version = item.optString("tag_name").removePrefix("v"),
+                            releaseDate = formatReleaseDate(item.optString("published_at")),
+                            changes = changes,
+                        )
+                    )
+                }
+            }
+        }
     }
 
     suspend fun downloadApk(
@@ -183,7 +220,5 @@ class UpdateChecker(private val context: Context) {
         return 0
     }
 
-    companion object {
-        const val AUTO_CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L
-    }
+    companion object
 }
