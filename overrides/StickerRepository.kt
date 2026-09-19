@@ -21,26 +21,51 @@ class StickerRepository(private val context: Context) {
     private val _categories = MutableStateFlow(store.loadCategories().toList())
     val categories: StateFlow<List<StickerCategory>> = _categories.asStateFlow()
 
-    suspend fun parseAndSave(
+    suspend fun parsePreview(
         url: String,
         options: ParseOptions = ParseOptions(),
-        categoryNames: List<String> = emptyList(),
         cancelRequested: AtomicBoolean = AtomicBoolean(false),
         onProgress: (ParseProgress) -> Unit = {},
     ): ParseResult {
-        val categoryIds = ensureCategories(categoryNames)
-        val result = parser.parse(
+        return parser.parse(
             inputUrl = url,
             options = options,
             isCancellationRequested = { cancelRequested.get() },
-            onTaskCompleted = { partial, progress ->
-                mergeParsedMedia(partial.sourceUrl, partial.author, partial.postText, partial.media, categoryIds)
+            onTaskCompleted = { _, progress ->
                 onProgress(progress)
             }
         )
-        cacheParsedMedia(result.media)
-        return result
     }
+
+    suspend fun importParsedResult(
+        result: ParseResult,
+        selectedCanonicalUrls: Set<String>,
+        categoryNames: List<String> = emptyList(),
+    ): Int {
+        if (selectedCanonicalUrls.isEmpty()) return 0
+
+        val selectedMedia = result.media.filter { parsed ->
+            canonicalMediaKey(parsed.url) in selectedCanonicalUrls
+        }
+        if (selectedMedia.isEmpty()) return 0
+
+        val categoryIds = ensureCategories(categoryNames)
+        mergeParsedMedia(
+            sourceUrl = result.sourceUrl,
+            author = result.author,
+            postText = result.postText,
+            media = selectedMedia,
+            categoryIds = categoryIds,
+        )
+        cacheParsedMedia(selectedMedia)
+        return selectedMedia
+            .map { canonicalMediaKey(it.url) }
+            .distinct()
+            .size
+    }
+
+    private fun canonicalMediaKey(url: String): String =
+        url.substringBefore('?').substringBefore('#')
 
     private fun mergeParsedMedia(
         sourceUrl: String,
@@ -53,7 +78,7 @@ class StickerRepository(private val context: Context) {
         val ids = mutableListOf<String>()
 
         media.forEach { parsed ->
-            val canonicalKey = parsed.url.substringBefore('?').substringBefore('#')
+            val canonicalKey = canonicalMediaKey(parsed.url)
             val id = AppStore.stableId(sourceUrl + "|" + canonicalKey)
             ids += id
 
@@ -102,14 +127,14 @@ class StickerRepository(private val context: Context) {
     private suspend fun cacheParsedMedia(media: List<ParsedMedia>) {
         if (media.isEmpty()) return
         val targetUrls = media
-            .map { it.url.substringBefore('?').substringBefore('#') }
+            .map { canonicalMediaKey(it.url) }
             .toSet()
 
         val updated = _stickers.value.toMutableList()
         var changed = false
         updated.indices.forEach { index ->
             val sticker = updated[index]
-            val canonical = sticker.mediaUrl.substringBefore('?').substringBefore('#')
+            val canonical = canonicalMediaKey(sticker.mediaUrl)
             if (canonical !in targetUrls) return@forEach
             val file = runCatching { cache.ensureCached(sticker) }.getOrNull() ?: return@forEach
             if (sticker.localCachePath != file.absolutePath) {
