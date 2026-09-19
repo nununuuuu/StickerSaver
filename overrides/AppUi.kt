@@ -144,13 +144,29 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = Accent,
-            secondary = Muted,
-            background = Paper,
-            surface = Paper,
-            surfaceVariant = WarmCard,
             onPrimary = Color.White,
+            primaryContainer = WarmSelected,
+            onPrimaryContainer = Ink,
+            secondary = Muted,
+            onSecondary = Color.White,
+            secondaryContainer = WarmCard,
+            onSecondaryContainer = Ink,
+            tertiary = Accent,
+            onTertiary = Color.White,
+            tertiaryContainer = WarmCard,
+            onTertiaryContainer = Ink,
+            background = Paper,
             onBackground = Ink,
-            onSurface = Ink
+            surface = Paper,
+            onSurface = Ink,
+            surfaceVariant = WarmCard,
+            onSurfaceVariant = Ink,
+            error = Color(0xFFB3261E),
+            onError = Color.White,
+            errorContainer = Color(0xFFF9DEDC),
+            onErrorContainer = Color(0xFF410E0B),
+            outline = Muted,
+            outlineVariant = WarmSelected
         )
     ) {
         Scaffold(
@@ -373,11 +389,15 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
     var categoryText by remember { mutableStateOf("") }
     var categoryDelimiter by remember { mutableStateOf(CategoryDelimiter.PLUS) }
     var loading by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableStateOf<ParseProgress?>(null) }
     var lastResult by remember { mutableStateOf<ParseResult?>(null) }
+    var previewSelected by remember { mutableStateOf<Set<String>>(emptySet()) }
     val cancel = remember { AtomicBoolean(false) }
     val scope = rememberCoroutineScope()
+
+    fun mediaKey(url: String): String = url.substringBefore('?').substringBefore('#')
 
     LaunchedEffect(shared) {
         if (!shared.isNullOrBlank()) input = shared
@@ -390,7 +410,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
         progress = null
         scope.launch {
             runCatching {
-                repo.parseAndSave(
+                repo.parsePreview(
                     input,
                     ParseOptions(
                         parsePost = includePost,
@@ -398,32 +418,36 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         commentLoadMode = if (loadAll) CommentLoadMode.ALL else CommentLoadMode.TOP,
                         topCommentCount = commentLimit.coerceIn(1, 500)
                     ),
-                    parseCategoryNames(categoryText, categoryDelimiter),
                     cancel,
                     { progress = it }
                 )
             }.onSuccess { parsed ->
+                val oldKeys = lastResult?.media
+                    ?.map { mediaKey(it.url) }
+                    ?.toSet()
+                    .orEmpty()
+                val oldDeselected = oldKeys - previewSelected
+                val newKeys = parsed.media.map { mediaKey(it.url) }.toSet()
+                previewSelected = newKeys - oldDeselected
                 lastResult = parsed
                 message = if (parsed.cancelled) {
                     "已停止後續解析；已完成 " + parsed.completedTasks + "/" + parsed.plannedTasks
                 } else {
                     val parts = mutableListOf<String>()
-                    if (includePost) parts += "貼文 " + parsed.postMedia.size
-                    if (comments) parts += "留言貼圖 " + parsed.commentMedia.size
-                    "完成：" + parts.joinToString("、")
-                }
-                val sourceId = AppStore.stableId(parsed.sourceUrl)
-                if (repo.sources.value.firstOrNull { it.id == sourceId }?.snapshotPath == null) {
-                    SourceSnapshotter.capture(activity, sourceId, parsed.sourceUrl)?.let {
-                        repo.attachSnapshot(sourceId, it)
-                    }
+                    if (includePost) parts += "貼文 " + parsed.postMedia.distinctBy { mediaKey(it.url) }.size
+                    if (comments) parts += "留言貼圖 " + parsed.commentMedia.distinctBy { mediaKey(it.url) }.size
+                    "解析完成：" + parts.joinToString("、") + "，尚未加入貼圖庫"
                 }
             }.onFailure { message = it.message ?: "解析失敗" }
             loading = false
         }
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
         item { Header("Sticker Saver") }
         item {
             Card(
@@ -440,57 +464,51 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         placeholder = { Text("貼上 Threads 貼文連結") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Accent,
-                            unfocusedBorderColor = Muted
+                            unfocusedBorderColor = Muted,
+                            focusedContainerColor = Tile,
+                            unfocusedContainerColor = Tile
                         )
                     )
                     Spacer(Modifier.height(12.dp))
                     Text("分類（選填）", fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = categoryText,
-                        onValueChange = { if (!loading) categoryText = it },
+                        onValueChange = { if (!loading && !importing) categoryText = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         placeholder = { Text("例如：寶可夢+貓咪+迷因") },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Accent,
-                            unfocusedBorderColor = Muted
+                            unfocusedBorderColor = Muted,
+                            focusedContainerColor = Tile,
+                            unfocusedContainerColor = Tile
                         )
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = categoryDelimiter == CategoryDelimiter.PLUS,
-                            onClick = { if (!loading) categoryDelimiter = CategoryDelimiter.PLUS },
-                            label = { Text("+") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Tile,
-                                labelColor = Ink,
-                                selectedContainerColor = WarmSelected,
-                                selectedLabelColor = Ink
+                        listOf(
+                            CategoryDelimiter.PLUS to "+",
+                            CategoryDelimiter.SLASH to "/",
+                            CategoryDelimiter.SPACE to "空白"
+                        ).forEach { (delimiter, label) ->
+                            FilterChip(
+                                selected = categoryDelimiter == delimiter,
+                                onClick = { if (!loading && !importing) categoryDelimiter = delimiter },
+                                label = { Text(label) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    containerColor = Tile,
+                                    labelColor = Ink,
+                                    selectedContainerColor = WarmSelected,
+                                    selectedLabelColor = Ink
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = categoryDelimiter == delimiter,
+                                    borderColor = Muted.copy(alpha = .35f),
+                                    selectedBorderColor = Accent.copy(alpha = .35f)
+                                )
                             )
-                        )
-                        FilterChip(
-                            selected = categoryDelimiter == CategoryDelimiter.SLASH,
-                            onClick = { if (!loading) categoryDelimiter = CategoryDelimiter.SLASH },
-                            label = { Text("/") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Tile,
-                                labelColor = Ink,
-                                selectedContainerColor = WarmSelected,
-                                selectedLabelColor = Ink
-                            )
-                        )
-                        FilterChip(
-                            selected = categoryDelimiter == CategoryDelimiter.SPACE,
-                            onClick = { if (!loading) categoryDelimiter = CategoryDelimiter.SPACE },
-                            label = { Text("空白") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Tile,
-                                labelColor = Ink,
-                                selectedContainerColor = WarmSelected,
-                                selectedLabelColor = Ink
-                            )
-                        )
+                        }
                     }
                     parseCategoryNames(categoryText, categoryDelimiter).takeIf { it.isNotEmpty() }?.let { names ->
                         Text(
@@ -505,7 +523,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             post,
-                            { if (!loading) post = it },
+                            { if (!loading && !importing) post = it },
                             colors = CheckboxDefaults.colors(checkedColor = Accent)
                         )
                         Text("貼文")
@@ -513,9 +531,10 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                         Checkbox(
                             comments,
                             {
-                                if (!loading) {
+                                if (!loading && !importing) {
                                     comments = it
                                     lastResult = null
+                                    previewSelected = emptySet()
                                 }
                             },
                             colors = CheckboxDefaults.colors(checkedColor = Accent)
@@ -525,7 +544,7 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
 
                     if (comments) {
                         Text(
-                            "初次讀取前 20 則預載留言，只保存其中的 Sticker / GIF。",
+                            "初次讀取前 20 則預載留言，只顯示其中的 Sticker / GIF。",
                             style = MaterialTheme.typography.bodySmall,
                             color = Muted
                         )
@@ -539,12 +558,18 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                                     message = "請至少選擇貼文或留言"
                                 } else {
                                     lastResult = null
+                                    previewSelected = emptySet()
                                     startParse(post, 20)
                                 }
                             },
-                            enabled = input.isNotBlank(),
+                            enabled = input.isNotBlank() && !importing,
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Accent,
+                                contentColor = Color.White,
+                                disabledContainerColor = WarmSelected,
+                                disabledContentColor = Muted
+                            )
                         ) { Text("開始解析") }
                     } else {
                         OutlinedButton(
@@ -552,7 +577,8 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                                 cancel.set(true)
                                 message = "已要求停止；目前項目完成後不再開始後續解析"
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            border = BorderStroke(1.dp, Muted)
                         ) { Text("取消後續解析") }
                     }
 
@@ -564,7 +590,11 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                             color = Accent,
                             trackColor = WarmSelected
                         )
-                        Text(it.currentLabel + " · " + it.completedTasks + "/" + it.plannedTasks, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            it.currentLabel + " · " + it.completedTasks + "/" + it.plannedTasks,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Muted
+                        )
                     }
 
                     lastResult?.takeIf { comments }?.let { parsed ->
@@ -576,23 +606,171 @@ private fun Home(activity: ComponentActivity, repo: StickerRepository, stickers:
                             style = MaterialTheme.typography.bodySmall,
                             color = Muted
                         )
-                        if (remaining > 0 && !loading) {
+                        if (remaining > 0 && !loading && !importing) {
                             Spacer(Modifier.height(8.dp))
                             if (remaining >= 20) {
                                 OutlinedButton(
                                     onClick = { startParse(false, loaded + 20) },
-                                    modifier = Modifier.fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = BorderStroke(1.dp, Muted)
                                 ) { Text("再載入 20 則留言") }
                                 Spacer(Modifier.height(6.dp))
                             }
                             OutlinedButton(
                                 onClick = { startParse(false, 500, loadAll = true) },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                border = BorderStroke(1.dp, Muted)
                             ) { Text("載入剩餘 " + remaining + " 則留言") }
                         }
                     }
 
-                    message?.let { Text(it, Modifier.padding(top = 10.dp)) }
+                    message?.let {
+                        Text(
+                            it,
+                            Modifier.padding(top = 10.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Muted
+                        )
+                    }
+                }
+            }
+        }
+
+        lastResult?.let { parsed ->
+            val previewItems = parsed.media.distinctBy { mediaKey(it.url) }
+            if (previewItems.isNotEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        color = WarmCard
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("解析結果", fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "已選 " + previewSelected.size + " / " + previewItems.size + " 張 · 尚未加入貼圖庫",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Muted
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        val all = previewItems.map { mediaKey(it.url) }.toSet()
+                                        previewSelected = if (previewSelected.size == all.size) emptySet() else all
+                                    }
+                                ) {
+                                    Text(if (previewSelected.size == previewItems.size) "全部取消" else "全選")
+                                }
+                            }
+
+                            Spacer(Modifier.height(10.dp))
+                            val rows = ((previewItems.size + 3) / 4).coerceIn(1, 4)
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(4),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height((rows * 86).dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(previewItems, key = { mediaKey(it.url) }) { media ->
+                                    val key = mediaKey(media.url)
+                                    val selected = key in previewSelected
+                                    Box(
+                                        Modifier
+                                            .aspectRatio(1f)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .clickable {
+                                                previewSelected = if (selected) previewSelected - key
+                                                else previewSelected + key
+                                            }
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(16.dp),
+                                            color = if (selected) WarmSelected else Tile,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            AsyncImage(
+                                                model = media.url,
+                                                contentDescription = "解析貼圖預覽",
+                                                modifier = Modifier.fillMaxSize().padding(5.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = if (selected) Accent else Paper.copy(alpha = .9f),
+                                            modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).size(22.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                if (selected) {
+                                                    Icon(
+                                                        Icons.Outlined.Check,
+                                                        null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = {
+                                    if (!importing) {
+                                        importing = true
+                                        scope.launch {
+                                            runCatching {
+                                                repo.importParsedResult(
+                                                    result = parsed,
+                                                    selectedCanonicalUrls = previewSelected,
+                                                    categoryNames = parseCategoryNames(categoryText, categoryDelimiter)
+                                                )
+                                            }.onSuccess { added ->
+                                                val sourceId = AppStore.stableId(parsed.sourceUrl)
+                                                if (repo.sources.value.firstOrNull { it.id == sourceId }?.snapshotPath == null) {
+                                                    SourceSnapshotter.capture(activity, sourceId, parsed.sourceUrl)?.let {
+                                                        repo.attachSnapshot(sourceId, it)
+                                                    }
+                                                }
+                                                message = "已加入 " + added + " 張貼圖"
+                                                lastResult = null
+                                                previewSelected = emptySet()
+                                            }.onFailure {
+                                                message = it.message ?: "加入貼圖庫失敗"
+                                            }
+                                            importing = false
+                                        }
+                                    }
+                                },
+                                enabled = previewSelected.isNotEmpty() && !importing,
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Accent,
+                                    contentColor = Color.White,
+                                    disabledContainerColor = WarmSelected,
+                                    disabledContentColor = Muted
+                                )
+                            ) {
+                                if (importing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(if (importing) "加入中…" else "加入貼圖庫")
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -746,20 +924,11 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
             }
         }
 
-        Row(
-            Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            LibraryFilter("最新", selected == LibraryTab.RECENT) {
-                scope.launch { pagerState.animateScrollToPage(0) }
-            }
-            LibraryFilter("常用", selected == LibraryTab.FREQUENT) {
-                scope.launch { pagerState.animateScrollToPage(1) }
-            }
-            LibraryFilter("全部", selected == LibraryTab.ALL) {
-                scope.launch { pagerState.animateScrollToPage(2) }
-            }
-        }
+        LibraryTabs(
+            currentPage = pagerState.currentPage,
+            pageOffset = pagerState.currentPageOffsetFraction,
+            onSelect = { page -> scope.launch { pagerState.animateScrollToPage(page) } }
+        )
 
         if (selectionMode) {
             val shownNow = listFor(selected)
@@ -1059,14 +1228,51 @@ private fun BatchCategoryDialog(
 }
 
 @Composable
-private fun RowScope.LibraryFilter(text: String, selected: Boolean, click: () -> Unit) {
-    Surface(
-        modifier = Modifier.weight(1f).clickable(onClick = click),
-        shape = RoundedCornerShape(18.dp),
-        color = if (selected) WarmSelected else Color.Transparent
+private fun LibraryTabs(
+    currentPage: Int,
+    pageOffset: Float,
+    onSelect: (Int) -> Unit,
+) {
+    val labels = listOf("最新", "常用", "全部")
+    BoxWithConstraints(
+        Modifier
+            .padding(horizontal = 16.dp)
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(22.dp))
     ) {
-        Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(text, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        val tabWidth = maxWidth / labels.size
+        val position = (currentPage + pageOffset).coerceIn(0f, (labels.size - 1).toFloat())
+
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = WarmSelected,
+            modifier = Modifier
+                .offset(x = tabWidth * position)
+                .width(tabWidth)
+                .fillMaxHeight()
+        ) {}
+
+        Row(Modifier.fillMaxSize()) {
+            labels.forEachIndexed { index, label ->
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clickable { onSelect(index) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = Ink,
+                        fontWeight = if (index == currentPage && kotlin.math.abs(pageOffset) < .5f) {
+                            FontWeight.SemiBold
+                        } else {
+                            FontWeight.Normal
+                        }
+                    )
+                }
+            }
         }
     }
 }
