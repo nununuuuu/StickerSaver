@@ -1861,14 +1861,17 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
     var newName by remember { mutableStateOf("") }
     var renameTarget by remember { mutableStateOf<StickerCategory?>(null) }
     var deleteTarget by remember { mutableStateOf<StickerCategory?>(null) }
+    val sortedCategories = remember(categories) { categories.sortedBy { it.name.lowercase() } }
 
     AlertDialog(
         onDismissRequest = dismiss,
+        containerColor = Paper,
+        tonalElevation = 0.dp,
         title = { Text("分類標籤管理") },
         text = {
             Column(
-                Modifier.fillMaxWidth().heightIn(max = 540.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                Modifier.fillMaxWidth().heightIn(max = 560.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
                     Modifier.fillMaxWidth(),
@@ -1880,7 +1883,13 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
                         onValueChange = { newName = it },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        label = { Text("新增分類") }
+                        label = { Text("新增分類") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Accent,
+                            unfocusedBorderColor = Muted,
+                            focusedContainerColor = Tile,
+                            unfocusedContainerColor = Tile
+                        )
                     )
                     Button(
                         onClick = {
@@ -1888,52 +1897,105 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
                             newName = ""
                         },
                         enabled = newName.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color.White,
+                            disabledContainerColor = WarmSelected,
+                            disabledContentColor = Muted
+                        )
                     ) { Text("新增") }
                 }
 
-                if (categories.isEmpty()) {
-                    Text("目前沒有分類標籤", color = Muted)
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.heightIn(max = 390.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                Text(
+                    "共 " + sortedCategories.size + " 個分類",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Muted
+                )
+
+                if (sortedCategories.isEmpty()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
                     ) {
-                        items(categories.sortedBy { it.name.lowercase() }.size) { index ->
-                            val category = categories.sortedBy { it.name.lowercase() }[index]
-                            val count = stickers.count { category.id in it.categoryIds }
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = Tile,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                        Box(
+                            Modifier.padding(vertical = 28.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("目前沒有分類標籤", color = Muted)
+                        }
+                    }
+                } else {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = WarmCard
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 340.dp),
+                            contentPadding = PaddingValues(vertical = 4.dp)
+                        ) {
+                            items(
+                                count = sortedCategories.size,
+                                key = { sortedCategories[it].id }
+                            ) { index ->
+                                val category = sortedCategories[index]
+                                val count = stickers.count { category.id in it.categoryIds }
+
                                 Row(
-                                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 14.dp, end = 6.dp, top = 7.dp, bottom = 7.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(50),
-                                        color = WarmSelected
+                                    Row(
+                                        Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
                                             category.name,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                            fontWeight = FontWeight.Medium
+                                            color = Ink,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            " · " + count + " 張",
+                                            color = Muted,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1
                                         )
                                     }
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(count.toString(), color = Muted, style = MaterialTheme.typography.bodySmall)
-                                    Spacer(Modifier.weight(1f))
-                                    IconButton(onClick = { renameTarget = category }) {
-                                        Icon(Icons.Outlined.Edit, contentDescription = "重新命名分類")
+
+                                    IconButton(
+                                        onClick = { renameTarget = category },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Edit,
+                                            contentDescription = "重新命名分類",
+                                            tint = Ink.copy(alpha = .8f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
                                     }
-                                    IconButton(onClick = { deleteTarget = category }) {
+                                    IconButton(
+                                        onClick = { deleteTarget = category },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
                                         Icon(
                                             Icons.Outlined.Delete,
                                             contentDescription = "刪除分類",
-                                            tint = MaterialTheme.colorScheme.error
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
+                                }
+
+                                if (index < sortedCategories.lastIndex) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 14.dp),
+                                        color = Muted.copy(alpha = .16f)
+                                    )
                                 }
                             }
                         }
@@ -1942,7 +2004,7 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
             }
         },
         confirmButton = {
-            TextButton(onClick = dismiss) { Text("完成") }
+            TextButton(onClick = dismiss) { Text("完成", color = Ink) }
         }
     )
 
@@ -1950,13 +2012,21 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
         var value by remember(category.id) { mutableStateOf(category.name) }
         AlertDialog(
             onDismissRequest = { renameTarget = null },
+            containerColor = Paper,
+            tonalElevation = 0.dp,
             title = { Text("重新命名分類") },
             text = {
                 OutlinedTextField(
                     value = value,
                     onValueChange = { value = it },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = Muted,
+                        focusedContainerColor = Tile,
+                        unfocusedContainerColor = Tile
+                    )
                 )
             },
             confirmButton = {
@@ -1966,11 +2036,16 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
                         renameTarget = null
                     },
                     enabled = value.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Accent)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Accent,
+                        contentColor = Color.White,
+                        disabledContainerColor = WarmSelected,
+                        disabledContentColor = Muted
+                    )
                 ) { Text("儲存") }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+                TextButton(onClick = { renameTarget = null }) { Text("取消", color = Ink) }
             }
         )
     }
@@ -1979,6 +2054,8 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
         val count = stickers.count { category.id in it.categoryIds }
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
+            containerColor = Paper,
+            tonalElevation = 0.dp,
             title = { Text("刪除「" + category.name + "」？") },
             text = {
                 Text(
@@ -1998,7 +2075,7 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+                TextButton(onClick = { deleteTarget = null }) { Text("取消", color = Ink) }
             }
         )
     }
