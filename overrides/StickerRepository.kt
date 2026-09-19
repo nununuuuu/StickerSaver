@@ -233,6 +233,19 @@ class StickerRepository(private val context: Context) {
         return clearedBytes
     }
 
+    fun clearStickerData() {
+        _stickers.value.forEach { sticker ->
+            sticker.localCachePath?.let { runCatching { File(it).delete() } }
+        }
+        _sources.value.forEach { source ->
+            source.snapshotPath?.let { runCatching { File(it).delete() } }
+        }
+        _stickers.value = emptyList()
+        _sources.value = emptyList()
+        _categories.value = emptyList()
+        persist()
+    }
+
     fun removeStickers(stickerIds: Set<String>) {
         if (stickerIds.isEmpty()) return
         val removed = _stickers.value.filter { it.id in stickerIds }
