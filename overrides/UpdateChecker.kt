@@ -219,6 +219,4 @@ class UpdateChecker(private val context: Context) {
         }
         return 0
     }
-
-    companion object
 }
