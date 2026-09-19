@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
@@ -31,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.File
@@ -53,6 +55,7 @@ class StickerKeyboardService : InputMethodService() {
     private var scopeMode = ScopeMode.RECENT
     private var categoryMode: String? = null
     private var adapter: StickerAdapter? = null
+    private var keyboardSwitchInProgress = false
 
     override fun onCreate() {
         super.onCreate()
@@ -323,14 +326,37 @@ class StickerKeyboardService : InputMethodService() {
     }
 
     private fun returnToPreviousKeyboard() {
-        val switched = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            switchToPreviousInputMethod()
-        } else {
-            false
-        }
-        if (!switched) {
+        if (keyboardSwitchInProgress) return
+        keyboardSwitchInProgress = true
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showInputMethodPicker()
+            keyboardSwitchInProgress = false
+            return
+        }
+
+        val accepted = switchToPreviousInputMethod()
+        serviceScope.launch {
+            delay(220)
+
+            // switchToPreviousInputMethod() 回傳 true 只代表系統接受要求。
+            // 若短時間後預設 IME 仍然是 Sticker Saver，補一次切換，避免只收起本鍵盤卻沒有接上上一個鍵盤。
+            val activeIme = runCatching {
+                Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            }.getOrNull()
+            val stillStickerSaver = activeIme?.contains(packageName, ignoreCase = true) == true
+
+            if (!accepted || stillStickerSaver) {
+                val recovered = switchToPreviousInputMethod() || switchToNextInputMethod(false)
+                if (!recovered) {
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showInputMethodPicker()
+                }
+            }
+
+            delay(350)
+            keyboardSwitchInProgress = false
         }
     }
 
