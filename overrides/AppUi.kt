@@ -205,19 +205,6 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                         fontWeight = FontWeight.Bold
                     )
                 },
-                text = {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(18.dp),
-                        color = WarmCard
-                    ) {
-                        Text(
-                            "要貼入 Sticker Saver 嗎？",
-                            modifier = Modifier.padding(14.dp),
-                            color = Ink
-                        )
-                    }
-                },
                 dismissButton = {
                     TextButton(onClick = { clipboardPromptUrl = null }) {
                         Text("取消", color = Ink)
@@ -1028,7 +1015,8 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                                 categoryMenu = false
                             }
                         )
-                        categories.sortedBy { it.name.lowercase() }.forEach { category ->
+                        categories.filter { category -> stickers.any { category.id in it.categoryIds } }
+                            .sortedBy { it.name.lowercase() }.forEach { category ->
                             val count = stickers.count { category.id in it.categoryIds }
                             DropdownMenuItem(
                                 text = {
