@@ -1184,6 +1184,7 @@ private fun BatchCategoryDialog(
         onDismissRequest = dismiss,
         containerColor = Paper,
         tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("批量編輯分類") },
         text = {
             Column(
@@ -1531,6 +1532,7 @@ private fun StickerGrid(
             onDismissRequest = { editTarget = null },
             containerColor = Paper,
             tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
             text = {
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = 500.dp),
@@ -2091,6 +2093,7 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
         onDismissRequest = dismiss,
         containerColor = Paper,
         tonalElevation = 0.dp,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("分類標籤管理") },
         text = {
             Column(
@@ -2238,6 +2241,7 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
             onDismissRequest = { renameTarget = null },
             containerColor = Paper,
             tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
             title = { Text("重新命名分類") },
             text = {
                 OutlinedTextField(
@@ -2280,6 +2284,7 @@ private fun CategoryManagerDialog(repo: StickerRepository, dismiss: () -> Unit) 
             onDismissRequest = { deleteTarget = null },
             containerColor = Paper,
             tonalElevation = 0.dp,
+            shape = RoundedCornerShape(28.dp),
             title = { Text("刪除「" + category.name + "」？") },
             text = {
                 Text(
