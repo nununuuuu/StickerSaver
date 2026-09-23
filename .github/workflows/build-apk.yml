@@ -2,9 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/build-trigger-v0315'
 
 permissions:
   contents: write
@@ -125,11 +122,6 @@ jobs:
           name: StickerSaver-v${{ steps.version.outputs.version }}-apk
           path: StickerSaver-v${{ steps.version.outputs.version }}.apk
           if-no-files-found: error
-
-      - name: Restore v0.3.13 correction notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release edit v0.3.13 --notes-file release-notes/v0.3.13.md
 
       - name: Publish versioned release
         env:
