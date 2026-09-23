@@ -212,6 +212,14 @@ class StickerRepository(private val context: Context) {
         publish(updated, _sources.value)
     }
 
+    fun toggleFavorite(stickerId: String) {
+        _stickers.value = _stickers.value.map {
+            if (it.id == stickerId) it.copy(favoriteAt = if (it.favoriteAt == null) System.currentTimeMillis() else null)
+            else it
+        }
+        persist()
+    }
+
     fun stickerCacheSizeBytes(): Long =
         _stickers.value
             .mapNotNull { it.localCachePath }
