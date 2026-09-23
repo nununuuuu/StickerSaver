@@ -42,6 +42,7 @@ class AppStore(context: Context) {
                         localCachePath = o.optString("localCachePath")
                             .takeIf { it.isNotBlank() && File(it).exists() },
                         useCount = o.optInt("useCount", 0),
+                        favoriteAt = o.optLong("favoriteAt").takeIf { it > 0 },
                         lastUsedAt = o.optLong("lastUsedAt").takeIf { it > 0 },
                         occurrences = occurrences,
                         categoryIds = buildList {
@@ -118,6 +119,7 @@ class AppStore(context: Context) {
                     put("mimeType", s.mimeType)
                     put("localCachePath", s.localCachePath ?: "")
                     put("useCount", s.useCount)
+                    put("favoriteAt", s.favoriteAt ?: 0L)
                     put("lastUsedAt", s.lastUsedAt ?: 0)
                     put("categoryIds", JSONArray(s.categoryIds))
                     put("occurrences", JSONArray().apply {
