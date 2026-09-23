@@ -140,7 +140,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 verticalArrangement=Arrangement.spacedBy(12.dp)) {
                 items(packs,key={it.id}) { p->
                     val cover=images.firstOrNull {it.id==p.coverId}?:images.firstOrNull {it.packId==p.id}
-                    Column(Modifier.fillMaxWidth().background(PackCard,RoundedCornerShape(18.dp))
+                    Column(Modifier.fillMaxWidth().background(PackPaper,RoundedCornerShape(18.dp))
                         .clickable {selectedPack=p.id;inPack=true}.padding(8.dp)) {
                         if(cover!=null) AsyncImage(model=File(cover.display),contentDescription=p.name,
                             modifier=Modifier.fillMaxWidth().height(130.dp),contentScale=ContentScale.Fit)
@@ -223,9 +223,8 @@ fun ImagePacksScreen(store:ImagePackStore) {
                     Column(
                         Modifier
                             .then(draggedModifier)
-                            .animateItem()
                             .background(
-                                if(isSelected || isDragging) PackCard else PackPaper,
+                                if(isSelected) PackCard else PackPaper,
                                 RoundedCornerShape(14.dp)
                             )
                             .clickable {
@@ -283,10 +282,14 @@ fun ImagePacksScreen(store:ImagePackStore) {
         PackDialog(onDismissRequest={selectedImage=null},
             text={Column {
                 AsyncImage(model=File(item.display),contentDescription="圖片預覽",modifier=Modifier.fillMaxWidth().height(190.dp))
-                if(item.mime!="image/gif") TextButton(onClick={editing=item;selectedImage=null}) {Text("編輯圖片")}
-                if(selectedPack!=null) TextButton(onClick={store.setCover(selectedPack!!,item.id);selectedImage=null}) {Text("設為圖集封面")}
-                TextButton(onClick={showMove=item;selectedImage=null}) {Text("移到其他圖集")}
-                TextButton(onClick={store.deleteImage(item.id);selectedImage=null}) {Text("永久刪除此圖片",color=Color(0xFFB3261E))}
+                if(item.mime!="image/gif") PackAction("編輯圖片",Icons.Outlined.Edit) {editing=item;selectedImage=null}
+                if(selectedPack!=null) PackAction("設為圖集封面",Icons.Outlined.Image) {
+                    store.setCover(selectedPack!!,item.id);selectedImage=null
+                }
+                PackAction("移到其他圖集",Icons.Outlined.DriveFileMove) {showMove=item;selectedImage=null}
+                PackAction("永久刪除此圖片",Icons.Outlined.Delete,danger=true) {
+                    store.deleteImage(item.id);selectedImage=null
+                }
             }},confirmButton={TextButton(onClick={selectedImage=null}){Text("關閉")}})
     }
     showMove?.let {item->
@@ -369,6 +372,22 @@ private fun PackNameField(value:String,onValueChange:(String)->Unit,hint:String)
         ),
         shape=RoundedCornerShape(14.dp)
     )
+}
+
+@Composable
+private fun PackAction(label:String,icon:androidx.compose.ui.graphics.vector.ImageVector,
+    danger:Boolean=false,onClick:()->Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min=48.dp)
+            .clickable(onClick=onClick).padding(horizontal=8.dp,vertical=10.dp),
+        horizontalArrangement=Arrangement.spacedBy(12.dp),
+        verticalAlignment=Alignment.CenterVertically
+    ) {
+        Icon(icon,contentDescription=null,tint=if(danger)Color(0xFFAF332B) else PackInk,
+            modifier=Modifier.size(20.dp))
+        Text(label,color=if(danger)Color(0xFFAF332B) else PackInk,
+            style=MaterialTheme.typography.bodyLarge)
+    }
 }
 
 @Composable
