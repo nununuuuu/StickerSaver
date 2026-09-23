@@ -970,7 +970,7 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                 }
             ) {
                 Icon(
-                    if (selectionMode) Icons.Outlined.Close else Icons.Outlined.Edit,
+                    if (selectionMode) Icons.Outlined.Close else Icons.Outlined.Checklist,
                     contentDescription = if (selectionMode) "結束批量編輯" else "批量編輯"
                 )
             }
@@ -985,7 +985,7 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        placeholder = { Text("分類篩選") },
+                        placeholder = { Text("分類篩選", color = Muted.copy(alpha = .55f)) },
                         trailingIcon = {
                             IconButton(onClick = { categoryMenu = !categoryMenu }) {
                                 Icon(Icons.Outlined.ArrowDropDown, contentDescription = "分類清單")
