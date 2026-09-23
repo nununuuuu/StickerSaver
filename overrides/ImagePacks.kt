@@ -130,6 +130,16 @@ class ImagePackStore(private val context: Context) {
         save()
     }
 
+    @Synchronized fun reorderToEnd(id:String) {
+        val item=_images.value.firstOrNull {it.id==id}?:return
+        val order=_images.value.filter {it.packId==item.packId}
+            .sortedBy {it.order}.map {it.id}.toMutableList()
+        if(order.lastOrNull()==id)return
+        order.remove(id)
+        order.add(id)
+        reorderToOrder(order)
+    }
+
     // Apply a complete in-pack drag preview atomically after the user releases.
     @Synchronized fun reorderToOrder(ids:List<String>) {
         if(ids.isEmpty() || ids.size!=ids.toSet().size)return
