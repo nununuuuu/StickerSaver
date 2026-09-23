@@ -8,6 +8,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.content.res.ColorStateList
 import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
@@ -116,6 +118,7 @@ class StickerKeyboardService : InputMethodService() {
 
         categorySpinner = Spinner(this).apply {
             background = roundedBackground(WARM_CARD, dp(18).toFloat())
+            foreground = pillRipple(18)
             setPadding(dp(8), 0, dp(6), 0)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
@@ -140,6 +143,7 @@ class StickerKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(5), dp(12), dp(5))
             background = roundedBackground(WARM_SELECTED, dp(14).toFloat())
+            foreground = pillRipple(14)
             visibility = View.GONE
             setOnClickListener { startKeyboardUpdate() }
             setOnLongClickListener {
@@ -466,8 +470,16 @@ class StickerKeyboardService : InputMethodService() {
         textSize = 14f
         gravity = Gravity.CENTER
         setTextColor(INK)
+        foreground = pillRipple(18)
         setOnClickListener { click() }
     }
+
+    private fun pillRipple(radiusDp: Int): RippleDrawable =
+        RippleDrawable(
+            ColorStateList.valueOf(Color.argb(42, 52, 49, 46)),
+            null,
+            roundedBackground(Color.WHITE, dp(radiusDp).toFloat())
+        )
 
     private fun roundedBackground(fillColor: Int, radius: Float): GradientDrawable =
         GradientDrawable().apply {
