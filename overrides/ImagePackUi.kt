@@ -78,6 +78,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var bulkDeleteConfirm by remember { mutableStateOf(false) }
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var dragTouch by remember { mutableStateOf(Offset.Zero) }
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
     var dropTargetId by remember { mutableStateOf<String?>(null) }
     var previewOrder by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -200,6 +201,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                             onDragStart={ touch->
                                 val visible=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
                                 draggingId=item.id
+                                dragTouch=touch
                                 dragOffset=Offset.Zero
                                 dragOrigin=if(visible==null) touch else
                                     Offset(visible.offset.x.toFloat(),visible.offset.y.toFloat())+touch
@@ -253,8 +255,8 @@ fun ImagePacksScreen(store:ImagePackStore) {
                     val finger=dragOrigin+dragOffset
                     val lift=if(isDragging && currentTile!=null)
                         Offset(
-                            finger.x-currentTile.offset.x-currentTile.size.width/2f,
-                            finger.y-currentTile.offset.y-currentTile.size.height/2f
+                            finger.x-currentTile.offset.x-dragTouch.x,
+                            finger.y-currentTile.offset.y-dragTouch.y
                         ) else Offset.Zero
                     Column(
                         Modifier
