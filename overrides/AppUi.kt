@@ -117,16 +117,14 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
             checker.cachedKeyboardUpdate()?.let { update = it }
             if (checker.shouldAutoCheckNow()) {
                 delay(600)
-                var info: UpdateInfo? = null
                 for (attempt in 0..1) {
                     val result = runCatching { checker.check() }
                     if (result.isSuccess) {
-                        info = result.getOrNull()
+                        update = result.getOrNull()?.takeUnless { checker.isDismissedToday(it.version) }
                         break
                     }
                     if (attempt == 0) delay(1500)
                 }
-                update = info?.takeUnless { checker.isDismissedToday(it.version) }
             }
         }
     }
