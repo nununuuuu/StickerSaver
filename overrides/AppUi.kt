@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -58,6 +60,13 @@ private val Muted = Color(0xFF756E67)
 private val WarmCard = Color(0xFFF0ECE6)
 private val WarmSelected = Color(0xFFE8DED2)
 private val Tile = Color(0xFFFEFDFC)
+
+internal fun isInternalSourceClipboardCopy(context: Context, url: String): Boolean {
+    val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+    val copiedAt = prefs.getLong("internal_source_copy_at", 0L)
+    return url == prefs.getString("internal_source_copy_url", null) &&
+        copiedAt > 0L && System.currentTimeMillis() - copiedAt in 0L..5000L
+}
 
 private enum class Tab { HOME, LIBRARY, SOURCES, SETTINGS }
 private enum class LibraryTab { RECENT, FAVORITES, ALL }
@@ -95,6 +104,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
         if (!url.isNullOrBlank() &&
             appPrefs.getBoolean("clipboard_monitor", false) &&
             url != pendingInput &&
+            !isInternalSourceClipboardCopy(context, url) &&
             clipboardPromptUrl == null
         ) {
             clipboardPromptUrl = url
@@ -132,7 +142,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                     .orEmpty()
             }.getOrDefault("")
             extractThreadsUrl(text)?.let { url ->
-                if (url != pendingInput && clipboardPromptUrl == null) {
+                if (url != pendingInput && !isInternalSourceClipboardCopy(context, url) && clipboardPromptUrl == null) {
                     clipboardPromptUrl = url
                 }
             }
@@ -1369,6 +1379,7 @@ private fun LibraryTabs(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .clip(RoundedCornerShape(20.dp))
                         .clickable { onSelect(index) },
                     contentAlignment = Alignment.Center
                 ) {
@@ -1449,19 +1460,19 @@ private fun StickerGrid(
                     AsyncImage(
                         sticker.localCachePath?.let(::File) ?: sticker.mediaUrl,
                         contentDescription = "貼圖",
-                        modifier = Modifier.fillMaxSize().padding(6.dp)
+                        modifier = Modifier.fillMaxSize().padding(start = 8.dp, top = 14.dp, end = 14.dp, bottom = 8.dp)
                     )
                 }
                 if (!selectionMode) {
                     IconButton(
                         onClick = { repo.toggleFavorite(sticker.id) },
-                        modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(32.dp)
+                        modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).size(27.dp)
                     ) {
                         Icon(
-                            if (sticker.favoriteAt != null) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+                            if (sticker.favoriteAt != null) Icons.Rounded.Star else Icons.Rounded.StarBorder,
                             contentDescription = if (sticker.favoriteAt != null) "取消收藏" else "加入收藏",
                             tint = if (sticker.favoriteAt != null) Color(0xFFD6A13A) else Muted,
-                            modifier = Modifier.size(23.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -1903,6 +1914,10 @@ private fun PostSourceCard(
                             },
                             onLongClick = {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                context.getSharedPreferences("app_settings", Context.MODE_PRIVATE).edit()
+                                    .putString("internal_source_copy_url", source.url)
+                                    .putLong("internal_source_copy_at", System.currentTimeMillis())
+                                    .commit()
                                 clipboard.setPrimaryClip(ClipData.newPlainText("Threads URL", source.url))
                                 Toast.makeText(context, "已複製網址", Toast.LENGTH_SHORT).show()
                             }
