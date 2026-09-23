@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.github/build-trigger-v0400'
+      - '.github/build-trigger-v0401'
 
 permissions:
   contents: write
