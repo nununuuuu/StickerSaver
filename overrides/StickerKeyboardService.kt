@@ -75,6 +75,7 @@ class StickerKeyboardService : InputMethodService() {
     private var keyboardCheckRunning = false
     private var packMode = false
     private var selectedPackId: String? = null
+    private val unclassifiedPackId = "__unclassified__"
     private lateinit var modeRow: LinearLayout
     private lateinit var packCovers: LinearLayout
     private lateinit var packStrip: HorizontalScrollView
@@ -398,16 +399,16 @@ class StickerKeyboardService : InputMethodService() {
         val store=ImagePackStore(applicationContext)
         val packs=store.packs.value.sortedBy {it.order}
         val images=store.images.value
-        if(selectedPackId!=null && packs.none {it.id==selectedPackId})selectedPackId=null
-        if(selectedPackId==null && packs.isNotEmpty())selectedPackId=packs.first().id
+        if(selectedPackId!=null && selectedPackId!=unclassifiedPackId && packs.none {it.id==selectedPackId})selectedPackId=null
+        if(selectedPackId==null)selectedPackId=packs.firstOrNull()?.id ?: unclassifiedPackId
         packCovers.removeAllViews()
         val unclassified=images.filter {it.packId==null}
         if(unclassified.isNotEmpty()) {
             packCovers.addView(TextView(this).apply {
                 text="未分類";gravity=Gravity.CENTER;textSize=12f
                 setTextColor(INK)
-                background=roundedBackground(if(selectedPackId==null)WARM_SELECTED else WARM_CARD,dp(13).toFloat())
-                setOnClickListener {selectedPackId=null;refreshPackGrid()}
+                background=roundedBackground(if(selectedPackId==unclassifiedPackId)WARM_SELECTED else WARM_CARD,dp(13).toFloat())
+                setOnClickListener {selectedPackId=unclassifiedPackId;refreshPackGrid()}
             },linear(dp(67),dp(46)))
         }
         for(pack in packs) {
@@ -422,7 +423,7 @@ class StickerKeyboardService : InputMethodService() {
             }
             packCovers.addView(cover,LinearLayout.LayoutParams(dp(49),dp(49)).apply {marginEnd=dp(7)})
         }
-        currentPackImages=images.filter {it.packId==selectedPackId}.sortedBy {it.order}
+        currentPackImages=images.filter {it.packId==(if(selectedPackId==unclassifiedPackId)null else selectedPackId)}.sortedBy {it.order}
         grid.adapter=object:BaseAdapter() {
             override fun getCount()=currentPackImages.size
             override fun getItem(position:Int):Any=currentPackImages[position]
