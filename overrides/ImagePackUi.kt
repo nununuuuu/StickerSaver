@@ -25,7 +25,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -493,6 +492,7 @@ private class PackEditorView(context:Context,initial:Bitmap):View(context) {
     fun restoreBitmap(value:Bitmap){bitmap=value.copy(Bitmap.Config.ARGB_8888,true);strokes.clear();invalidate()}
     var text:String=""; var textX=0.5f;var textY=0.5f
     var drawMode=false
+    var onStrokeFinished:(()->Unit)?=null
     var overlay:Bitmap?=null
     var overlayX=0.5f;var overlayY=0.5f;var overlayScale=0.45f
     private val strokes=mutableListOf<MutableList<Pair<Float,Float>>>()
@@ -532,7 +532,7 @@ private class PackEditorView(context:Context,initial:Bitmap):View(context) {
         when(event.actionMasked) {
             MotionEvent.ACTION_DOWN->{strokes.add(mutableListOf(x to y));invalidate();return true}
             MotionEvent.ACTION_MOVE->{strokes.lastOrNull()?.add(x to y);invalidate();return true}
-            MotionEvent.ACTION_UP->{invalidate();return true}
+            MotionEvent.ACTION_UP->{invalidate();onStrokeFinished?.invoke();return true}
         }
         return true
     }
@@ -586,6 +586,7 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
     var discardPrompt by remember {mutableStateOf(false)}
     var dirty by remember {mutableStateOf(false)}
     var undoRevision by remember {mutableIntStateOf(0)}
+    var strokeRevision by remember {mutableIntStateOf(0)}
     var overlayScale by remember {mutableFloatStateOf(0.45f)}
     var overlayX by remember {mutableFloatStateOf(0.5f)}
     var overlayY by remember {mutableFloatStateOf(0.5f)}
@@ -596,6 +597,7 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
             editor.overlay=readImage(context,uri);dirty=true;editor.invalidate()
         } else if(uri!=null)Toast.makeText(context,"疊圖僅支援靜態圖片",Toast.LENGTH_SHORT).show()
     }
+    editor.onStrokeFinished={dirty=true;strokeRevision++}
     val requestBack={
         editor.drawMode=false
         drawing=false
@@ -608,9 +610,11 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
         Row(verticalAlignment=Alignment.CenterVertically) {
             TextButton(onClick=requestBack){Text("取消",color=PackInk)}
             Text("梗圖編輯器",modifier=Modifier.weight(1f),color=PackInk)
-            TextButton(enabled=undoRevision>0,onClick={editor.undoStep();undoRevision--;dirty=true}) {
-                Icon(Icons.Outlined.Undo,"撤銷")
-            }
+            TextButton(enabled=undoRevision>0 || strokeRevision>0,onClick={
+                if(strokeRevision>0){editor.undoStroke();strokeRevision--}
+                else {editor.undoStep();undoRevision--}
+                dirty=true
+            }) {Icon(Icons.Outlined.Undo,"撤銷")}
             Button(onClick={editor.drawMode=false;drawing=false;savePrompt=true}){Text("保存")}
         }
         AndroidView(factory={editor},modifier=Modifier.fillMaxWidth().weight(1f))
@@ -630,7 +634,7 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
             TextButton(onClick={cropPrompt=true}){Text("方形裁切")}
             TextButton(onClick={editor.rotate();dirty=true;undoRevision++}){Text("旋轉")}
             TextButton(onClick={drawing=!drawing;editor.drawMode=drawing}){Text(if(drawing)"停止塗鴉" else "塗鴉")}
-            TextButton(onClick={editor.undoStroke();dirty=true}){Text("復原塗鴉")}
+            TextButton(enabled=strokeRevision>0,onClick={editor.undoStroke();strokeRevision--;dirty=true}){Text("復原塗鴉")}
             TextButton(onClick={overlayPicker.launch("image/*")}){Text("疊圖")}
         }
     }
