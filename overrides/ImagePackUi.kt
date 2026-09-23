@@ -54,6 +54,7 @@ import coil3.compose.AsyncImage
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
+import kotlinx.coroutines.launch
 
 private val PackPaper=Color(0xFFF7F5F2)
 private val PackInk=Color(0xFF242220)
@@ -85,6 +86,8 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var dragTouch by remember { mutableStateOf(Offset.Zero) }
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
     var dropTargetId by remember { mutableStateOf<String?>(null) }
+    var dragBeyondLast by remember { mutableStateOf(false) }
+    var dragScrollInFlight by remember { mutableStateOf(false) }
     val packGridState=rememberLazyGridState()
     val dragScrollScope=rememberCoroutineScope()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
@@ -206,6 +209,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                 dragOrigin=if(visible==null) touch else
                                     Offset(visible.offset.x.toFloat(),visible.offset.y.toFloat())+touch
                                 dropTargetId=item.id
+                                dragBeyondLast=false
                             },
                             onDrag={change,delta->
                                 change.consume()
@@ -221,6 +225,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                     }
                                 if(target!=null) {
                                     dropTargetId=target.key as? String
+                                    dragBeyondLast=false
                                 } else {
                                     // Empty space before the first / after the last tile
                                     // must still be a valid drop destination.
@@ -228,11 +233,14 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                         .filter {it.key is String}.sortedBy {it.index}
                                     val first=visible.firstOrNull()
                                     val last=visible.lastOrNull()
-                                    if(first!=null && pointer.y<first.offset.y)
+                                    if(first!=null && pointer.y<first.offset.y) {
                                         dropTargetId=shown.firstOrNull()?.id
-                                    else if(last!=null &&
-                                        pointer.y>=last.offset.y+last.size.height)
+                                        dragBeyondLast=false
+                                    } else if(last!=null &&
+                                        pointer.y>=last.offset.y+last.size.height) {
                                         dropTargetId=shown.lastOrNull()?.id
+                                        dragBeyondLast=true
+                                    }
                                 }
                                 val layout=packGridState.layoutInfo
                                 val edge=70.dp.toPx()
@@ -241,8 +249,12 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                     pointer.y>layout.viewportEndOffset-edge -> 18.dp.toPx()
                                     else -> 0f
                                 }
-                                if(scroll!=0f) dragScrollScope.launch {
-                                    packGridState.scrollBy(scroll)
+                                if(scroll!=0f && !dragScrollInFlight) {
+                                    dragScrollInFlight=true
+                                    dragScrollScope.launch {
+                                        try {packGridState.scrollBy(scroll)}
+                                        finally {dragScrollInFlight=false}
+                                    }
                                 }
                             },
                             onDragEnd={
@@ -250,7 +262,10 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                 draggingId=null
                                 dropTargetId=null
                                 dragOffset=Offset.Zero
-                                if(target!=null && target!=item.id) store.reorderTo(item.id,target)
+                                if(target!=null && target!=item.id) {
+                                    if(dragBeyondLast) store.reorderToEnd(item.id)
+                                    else store.reorderTo(item.id,target)
+                                }
                             },
                             onDragCancel={
                                 draggingId=null
