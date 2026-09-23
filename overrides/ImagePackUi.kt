@@ -76,8 +76,9 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var bulkMove by remember { mutableStateOf(false) }
     var bulkDeleteConfirm by remember { mutableStateOf(false) }
     var draggingId by remember { mutableStateOf<String?>(null) }
-    var dragPointer by remember { mutableStateOf(Offset.Zero) }
-    var lastDropTarget by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var dragOrigin by remember { mutableStateOf(Offset.Zero) }
+    var dropTargetId by remember { mutableStateOf<String?>(null) }
     val packGridState=rememberLazyGridState()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if(uris.isNotEmpty()) {
@@ -184,52 +185,57 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 verticalArrangement=Arrangement.spacedBy(8.dp)
             ) {
                 items(shown,key={it.id}) { item->
-                    val isDragging=draggingId==item.id && !bulkEditing
                     val isSelected=item.id in selectedIds
+                    // Keep the pointer handler attached to the image for the entire gesture.
+                    // Persist the reorder only on release, so recomposition cannot cancel an active drag.
                     val draggedModifier=if(bulkEditing) Modifier else Modifier.pointerInput(item.id) {
                         detectDragGesturesAfterLongPress(
                             onDragStart={ touch->
+                                val visible=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
                                 draggingId=item.id
-                                val position=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
-                                dragPointer=if(position==null)touch else Offset(position.offset.x.toFloat(),position.offset.y.toFloat())+touch
-                                lastDropTarget=item.id
+                                dragOffset=Offset.Zero
+                                dragOrigin=if(visible==null) touch else
+                                    Offset(visible.offset.x.toFloat(),visible.offset.y.toFloat())+touch
+                                dropTargetId=item.id
                             },
                             onDrag={change,delta->
                                 change.consume()
-                                dragPointer+=delta
-                                val target=packGridState.layoutInfo.visibleItemsInfo
+                                dragOffset+=delta
+                                val pointer=dragOrigin+dragOffset
+                                dropTargetId=packGridState.layoutInfo.visibleItemsInfo
                                     .filter {it.key is String}
-                                    .minByOrNull {visible->
-                                        val dx=visible.offset.x+visible.size.width/2f-dragPointer.x
-                                        val dy=visible.offset.y+visible.size.height/2f-dragPointer.y
+                                    .minByOrNull { visible->
+                                        val dx=visible.offset.x+visible.size.width/2f-pointer.x
+                                        val dy=visible.offset.y+visible.size.height/2f-pointer.y
                                         dx*dx+dy*dy
-                                    }?.key as? String
-                                if(target!=null && target!=item.id && target!=lastDropTarget) {
-                                    lastDropTarget=target
-                                    store.reorderTo(item.id,target)
-                                }
+                                    }?.key as? String ?: item.id
                             },
                             onDragEnd={
+                                val target=dropTargetId
                                 draggingId=null
-                                lastDropTarget=null
+                                dragOffset=Offset.Zero
+                                dropTargetId=null
+                                if(target!=null && target!=item.id) store.reorderTo(item.id,target)
                             },
                             onDragCancel={
                                 draggingId=null
-                                lastDropTarget=null
+                                dragOffset=Offset.Zero
+                                dropTargetId=null
                             }
                         )
                     }
                     Column(
                         Modifier
-                            .then(draggedModifier)
                             .background(
-                                if(isSelected) PackCard else PackPaper,
+                                if(isSelected || (!bulkEditing && dropTargetId==item.id && draggingId!=null))
+                                    PackCard else PackPaper,
                                 RoundedCornerShape(14.dp)
                             )
                             .clickable {
                                 if(bulkEditing) selectedIds=if(isSelected) selectedIds-item.id else selectedIds+item.id
                                 else selectedImage=item
                             }
+                            .then(draggedModifier)
                             .padding(5.dp)
                     ) {
                         Box {
