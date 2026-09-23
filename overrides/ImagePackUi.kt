@@ -24,6 +24,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -82,6 +84,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
     var dropTargetId by remember { mutableStateOf<String?>(null) }
     val packGridState=rememberLazyGridState()
+    val dragScrollScope=rememberCoroutineScope()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if(uris.isNotEmpty()) {
             val packId=if(pickNew) {
@@ -214,8 +217,31 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                         pointer.y>=visible.offset.y &&
                                         pointer.y<visible.offset.y+visible.size.height
                                     }
-                                if(target!=null) dropTargetId=target.key as? String
-
+                                if(target!=null) {
+                                    dropTargetId=target.key as? String
+                                } else {
+                                    // Empty space before the first / after the last tile
+                                    // must still be a valid drop destination.
+                                    val visible=packGridState.layoutInfo.visibleItemsInfo
+                                        .filter {it.key is String}.sortedBy {it.index}
+                                    val first=visible.firstOrNull()
+                                    val last=visible.lastOrNull()
+                                    if(first!=null && pointer.y<first.offset.y)
+                                        dropTargetId=shown.firstOrNull()?.id
+                                    else if(last!=null &&
+                                        pointer.y>=last.offset.y+last.size.height)
+                                        dropTargetId=shown.lastOrNull()?.id
+                                }
+                                val layout=packGridState.layoutInfo
+                                val edge=70.dp.toPx()
+                                val scroll=when {
+                                    pointer.y<layout.viewportStartOffset+edge -> -18.dp.toPx()
+                                    pointer.y>layout.viewportEndOffset-edge -> 18.dp.toPx()
+                                    else -> 0f
+                                }
+                                if(scroll!=0f) dragScrollScope.launch {
+                                    packGridState.scrollBy(scroll)
+                                }
                             },
                             onDragEnd={
                                 val target=dropTargetId
