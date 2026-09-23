@@ -47,6 +47,8 @@ jobs:
           cp overrides/MainActivity.kt "$JAVA_DIR/MainActivity.kt"
           cp overrides/StickerKeyboardService.kt "$JAVA_DIR/StickerKeyboardService.kt"
           cp overrides/UpdateChecker.kt "$JAVA_DIR/UpdateChecker.kt"
+          cp overrides/ImagePacks.kt "$JAVA_DIR/ImagePacks.kt"
+          cp overrides/ImagePackUi.kt "$JAVA_DIR/ImagePackUi.kt"
           cp overrides/app-build.gradle.kts project/app/build.gradle.kts
 
           cp overrides/AndroidManifest.xml project/app/src/main/AndroidManifest.xml
