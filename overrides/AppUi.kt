@@ -59,7 +59,7 @@ private val WarmSelected = Color(0xFFE8DED2)
 private val Tile = Color(0xFFFEFDFC)
 
 private enum class Tab { HOME, LIBRARY, SOURCES, SETTINGS }
-private enum class LibraryTab { RECENT, FREQUENT, ALL }
+private enum class LibraryTab { RECENT, FAVORITES, ALL }
 private enum class CategoryDelimiter { PLUS, SLASH, SPACE }
 
 @Composable
@@ -926,10 +926,8 @@ private fun Library(repo: StickerRepository, stickers: List<StickerItem>) {
 
     fun listFor(tab: LibraryTab): List<StickerItem> {
         val base = when (tab) {
-            LibraryTab.RECENT -> stickers.takeLast(20).reversed()
-            LibraryTab.FREQUENT -> stickers
-                .sortedWith(compareByDescending<StickerItem> { it.useCount }.thenByDescending { it.lastUsedAt ?: 0L })
-                .take(20)
+            LibraryTab.RECENT -> stickers.filter { it.lastUsedAt != null }.sortedByDescending { it.lastUsedAt }.take(20)
+            LibraryTab.FAVORITES -> stickers.filter { it.favoriteAt != null }.sortedByDescending { it.favoriteAt }
             LibraryTab.ALL -> stickers.asReversed()
         }
         return filtered(base)
@@ -1452,6 +1450,19 @@ private fun StickerGrid(
                         contentDescription = "貼圖",
                         modifier = Modifier.fillMaxSize().padding(6.dp)
                     )
+                }
+                if (!selectionMode) {
+                    IconButton(
+                        onClick = { repo.toggleFavorite(sticker.id) },
+                        modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(32.dp)
+                    ) {
+                        Icon(
+                            if (sticker.favoriteAt != null) Icons.Outlined.Star else Icons.Outlined.StarBorder,
+                            contentDescription = if (sticker.favoriteAt != null) "取消收藏" else "加入收藏",
+                            tint = if (sticker.favoriteAt != null) Color(0xFFD6A13A) else Muted,
+                            modifier = Modifier.size(23.dp)
+                        )
+                    }
                 }
                 if (selectionMode) {
                     Surface(
