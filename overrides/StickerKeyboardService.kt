@@ -9,6 +9,10 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.Drawable
+import android.graphics.Path
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.content.res.ColorStateList
 import android.os.Build
 import android.provider.Settings
@@ -67,6 +71,7 @@ class StickerKeyboardService : InputMethodService() {
     private var keyboardUpdate: UpdateInfo? = null
     private var updateDownloading = false
     private var keyboardSwitchInProgress = false
+    private var keyboardCheckRunning = false
 
     override fun onCreate() {
         super.onCreate()
@@ -159,14 +164,7 @@ class StickerKeyboardService : InputMethodService() {
         })
         keyboardUpdate = updateChecker.cachedKeyboardUpdate()
         renderUpdateBanner()
-        if (updateChecker.shouldCheckKeyboard()) {
-            updateChecker.markKeyboardCheckAttempt()
-            serviceScope.launch {
-                val found = runCatching { updateChecker.check() }.getOrNull()
-                keyboardUpdate = found?.takeUnless { updateChecker.isDismissedToday(it.version) }
-                renderUpdateBanner()
-            }
-        }
+        checkKeyboardUpdates()
 
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -206,6 +204,28 @@ class StickerKeyboardService : InputMethodService() {
         updateCategorySpinner()
         refreshGrid()
         return root
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        keyboardUpdate = updateChecker.cachedKeyboardUpdate()
+        renderUpdateBanner()
+        checkKeyboardUpdates()
+    }
+
+    private fun checkKeyboardUpdates() {
+        if (keyboardCheckRunning || !updateChecker.shouldCheckKeyboard()) return
+        keyboardCheckRunning = true
+        updateChecker.markKeyboardCheckAttempt()
+        serviceScope.launch {
+            runCatching { updateChecker.check() }
+                .onSuccess { found ->
+                    updateChecker.markKeyboardCheckSuccess()
+                    keyboardUpdate = found?.takeUnless { updateChecker.isDismissedToday(it.version) }
+                }
+            keyboardCheckRunning = false
+            renderUpdateBanner()
+        }
     }
 
     private fun renderUpdateBanner() {
@@ -408,34 +428,35 @@ class StickerKeyboardService : InputMethodService() {
         keyboardSwitchInProgress = true
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showInputMethodPicker()
+            showKeyboardPicker()
             keyboardSwitchInProgress = false
             return
         }
 
-        val accepted = switchToPreviousInputMethod()
+        val accepted = runCatching { switchToPreviousInputMethod() }.getOrDefault(false)
         serviceScope.launch {
-            delay(220)
-
-            // switchToPreviousInputMethod() 回傳 true 只代表系統接受要求。
-            // 若短時間後預設 IME 仍然是 Sticker Saver，補一次切換，避免只收起本鍵盤卻沒有接上上一個鍵盤。
-            val activeIme = runCatching {
+            delay(380)
+            val currentIme = runCatching {
                 Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
             }.getOrNull()
-            val stillStickerSaver = activeIme?.contains(packageName, ignoreCase = true) == true
-
-            if (!accepted || stillStickerSaver) {
-                val recovered = switchToPreviousInputMethod() || switchToNextInputMethod(false)
-                if (!recovered) {
-                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.showInputMethodPicker()
+            val stillHere = currentIme?.contains(packageName, ignoreCase = true) != false
+            if (!accepted || stillHere) {
+                val switched = runCatching { switchToNextInputMethod(false) }.getOrDefault(false)
+                delay(360)
+                val verifiedIme = runCatching {
+                    Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+                }.getOrNull()
+                if (!switched || verifiedIme?.contains(packageName, ignoreCase = true) != false) {
+                    showKeyboardPicker()
                 }
             }
-
-            delay(350)
             keyboardSwitchInProgress = false
         }
+    }
+
+    private fun showKeyboardPicker() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showInputMethodPicker()
     }
 
     private fun arrowButton(click: () -> Unit): View =
@@ -517,17 +538,20 @@ class StickerKeyboardService : InputMethodService() {
                 )
                 addView(ImageView(context).apply {
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
-                    setPadding(dp(context, 7), dp(context, 7), dp(context, 7), dp(context, 7))
+                    setPadding(dp(context, 8), dp(context, 13), dp(context, 13), dp(context, 7))
                 }, FrameLayout.LayoutParams(-1, -1))
-                addView(TextView(context).apply {
-                    gravity = Gravity.CENTER
-                    textSize = 22f
-                    setShadowLayer(2f, 0f, 0f, Color.WHITE)
-                }, FrameLayout.LayoutParams(dp(context, 32), dp(context, 32), Gravity.TOP or Gravity.RIGHT))
+                addView(ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(context, 3), dp(context, 3), dp(context, 3), dp(context, 3))
+                    setBackgroundColor(Color.TRANSPARENT)
+                }, FrameLayout.LayoutParams(dp(context, 30), dp(context, 30), Gravity.TOP or Gravity.RIGHT).apply {
+                    topMargin = dp(context, 3)
+                    rightMargin = dp(context, 3)
+                })
             }
             val sticker = items[position]
             val image = frame.getChildAt(0) as ImageView
-            val star = frame.getChildAt(1) as TextView
+            val star = frame.getChildAt(1) as ImageView
             val model: Any = sticker.localCachePath?.takeIf { File(it).isFile && File(it).length() > 0L }?.let(::File)
                 ?: sticker.mediaUrl
             if (image.tag != sticker.id || image.drawable == null) image.load(model, imageLoader) {
@@ -536,14 +560,44 @@ class StickerKeyboardService : InputMethodService() {
                 })
             }
             image.tag = sticker.id
-            star.text = if (sticker.favoriteAt != null) "★" else "☆"
-            star.setTextColor(if (sticker.favoriteAt != null) Color.rgb(214, 161, 58) else MUTED)
+            star.setImageDrawable(SoftStarDrawable(sticker.favoriteAt != null))
+            star.contentDescription = if (sticker.favoriteAt != null) "取消收藏" else "加入收藏"
             star.setOnClickListener { (context.applicationContext as StickerApplication).repository.toggleFavorite(sticker.id) }
             return frame
         }
 
         private fun dp(context: Context, value: Int): Int =
             (value * context.resources.displayMetrics.density).toInt()
+    }
+
+    private class SoftStarDrawable(private val favorite: Boolean) : Drawable() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            strokeJoin = Paint.Join.ROUND
+            strokeCap = Paint.Cap.ROUND
+        }
+        override fun draw(canvas: Canvas) {
+            val bounds = bounds
+            val cx = bounds.exactCenterX()
+            val cy = bounds.exactCenterY()
+            val radius = minOf(bounds.width(), bounds.height()) * 0.36f
+            val path = Path()
+            for (point in 0 until 10) {
+                val angle = Math.PI * (point / 5.0 - 0.5)
+                val r = if (point % 2 == 0) radius else radius * 0.51f
+                val x = cx + (Math.cos(angle) * r).toFloat()
+                val y = cy + (Math.sin(angle) * r).toFloat()
+                if (point == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+            paint.color = if (favorite) Color.rgb(214, 161, 58) else Color.rgb(117, 110, 103)
+            paint.strokeWidth = radius * 0.15f
+            paint.style = if (favorite) Paint.Style.FILL else Paint.Style.STROKE
+            canvas.drawPath(path, paint)
+        }
+        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { paint.colorFilter = colorFilter }
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
     }
 
     private class SimpleTextWatcher(private val onChanged: () -> Unit) : android.text.TextWatcher {
