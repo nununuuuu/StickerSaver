@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
                 .orEmpty()
         }.getOrNull().orEmpty()
 
-        return extractThreadsUrl(raw)
+        return extractThreadsUrl(raw)?.takeUnless { isInternalSourceClipboardCopy(this, it) }
     }
 
     private fun extractSharedText(intent: Intent?): String? {
