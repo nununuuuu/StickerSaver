@@ -20,6 +20,7 @@ import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.GridView
 import android.widget.ImageView
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
@@ -28,6 +29,7 @@ import android.inputmethodservice.InputMethodService
 import androidx.core.content.FileProvider
 import coil3.ImageLoader
 import coil3.load
+import coil3.gif.GifDecoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -60,7 +62,7 @@ class StickerKeyboardService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         repo = (application as StickerApplication).repository
-        imageLoader = ImageLoader.Builder(this).build()
+        imageLoader = ImageLoader.Builder(this).components { add(GifDecoder.Factory()) }.build()
         serviceScope.launch {
             combine(repo.stickers, repo.categories) { stickers, categories -> stickers to categories }
                 .collect { (stickers, categories) ->
@@ -132,7 +134,7 @@ class StickerKeyboardService : InputMethodService() {
             setPadding(dp(2), dp(8), dp(2), dp(8))
         }
         recentTab = tabText("最近") { scopeMode = ScopeMode.RECENT; refreshGrid() }
-        frequentTab = tabText("常用") { scopeMode = ScopeMode.FREQUENT; refreshGrid() }
+        frequentTab = tabText("收藏") { scopeMode = ScopeMode.FREQUENT; refreshGrid() }
         allTab = tabText("全部") { scopeMode = ScopeMode.ALL; refreshGrid() }
 
         tabs.addView(recentTab, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginEnd = dp(4) })
@@ -217,10 +219,8 @@ class StickerKeyboardService : InputMethodService() {
         if (!::grid.isInitialized) return
 
         val base = when (scopeMode) {
-            ScopeMode.RECENT -> allStickers.takeLast(20).reversed()
-            ScopeMode.FREQUENT -> allStickers
-                .sortedWith(compareByDescending<StickerItem> { it.useCount }.thenByDescending { it.lastUsedAt ?: 0L })
-                .take(20)
+            ScopeMode.RECENT -> allStickers.filter { it.lastUsedAt != null }.sortedByDescending { it.lastUsedAt }.take(20)
+            ScopeMode.FREQUENT -> allStickers.filter { it.favoriteAt != null }.sortedByDescending { it.favoriteAt }
             ScopeMode.ALL -> allStickers.asReversed()
         }
 
@@ -418,9 +418,7 @@ class StickerKeyboardService : InputMethodService() {
         fun itemAt(position: Int): StickerItem? = items.getOrNull(position)
 
         override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup?): View {
-            val image = (convertView as? ImageView) ?: ImageView(context).apply {
-                scaleType = ImageView.ScaleType.CENTER_INSIDE
-                setPadding(dp(context, 7), dp(context, 7), dp(context, 7), dp(context, 7))
+            val frame = (convertView as? FrameLayout) ?: FrameLayout(context).apply {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     setColor(TILE)
@@ -430,11 +428,31 @@ class StickerKeyboardService : InputMethodService() {
                     android.widget.AbsListView.LayoutParams.MATCH_PARENT,
                     dp(context, 76)
                 )
+                addView(ImageView(context).apply {
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(context, 7), dp(context, 7), dp(context, 7), dp(context, 7))
+                }, FrameLayout.LayoutParams(-1, -1))
+                addView(TextView(context).apply {
+                    gravity = Gravity.CENTER
+                    textSize = 22f
+                    setShadowLayer(2f, 0f, 0f, Color.WHITE)
+                }, FrameLayout.LayoutParams(dp(context, 32), dp(context, 32), Gravity.TOP or Gravity.RIGHT))
             }
             val sticker = items[position]
-            val model: Any = sticker.localCachePath?.let(::File) ?: sticker.mediaUrl
-            image.load(model, imageLoader)
-            return image
+            val image = frame.getChildAt(0) as ImageView
+            val star = frame.getChildAt(1) as TextView
+            val model: Any = sticker.localCachePath?.takeIf { File(it).isFile && File(it).length() > 0L }?.let(::File)
+                ?: sticker.mediaUrl
+            image.setImageDrawable(null)
+            image.load(model, imageLoader) {
+                listener(onError = { _, _ ->
+                    if (model is File) image.load(sticker.mediaUrl, imageLoader)
+                })
+            }
+            star.text = if (sticker.favoriteAt != null) "★" else "☆"
+            star.setTextColor(if (sticker.favoriteAt != null) Color.rgb(214, 161, 58) else MUTED)
+            star.setOnClickListener { (context.applicationContext as StickerApplication).repository.toggleFavorite(sticker.id) }
+            return frame
         }
 
         private fun dp(context: Context, value: Int): Int =
