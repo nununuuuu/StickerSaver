@@ -26,6 +26,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -469,6 +471,11 @@ private fun readImage(context:Context,uri:Uri):Bitmap?=runCatching {
 
 private class PackEditorView(context:Context,initial:Bitmap):View(context) {
     var bitmap:Bitmap=initial;private set
+    private val history=mutableListOf<Bitmap>()
+    val canUndo:Boolean get()=history.isNotEmpty()
+    fun saveStep(){history.add(bitmap.copy(Bitmap.Config.ARGB_8888,true));if(history.size>16)history.removeAt(0)}
+    fun undoStep(){if(history.isNotEmpty()){bitmap=history.removeAt(history.lastIndex);strokes.clear();invalidate()}}
+    fun restoreBitmap(value:Bitmap){bitmap=value.copy(Bitmap.Config.ARGB_8888,true);strokes.clear();invalidate()}
     var text:String=""; var textX=0.5f;var textY=0.5f
     var drawMode=false
     var overlay:Bitmap?=null
@@ -514,10 +521,10 @@ private class PackEditorView(context:Context,initial:Bitmap):View(context) {
         }
         return true
     }
-    fun rotate(){val m=Matrix().apply{postRotate(90f)}
+    fun rotate(){saveStep();val m=Matrix().apply{postRotate(90f)}
         bitmap=Bitmap.createBitmap(bitmap,0,0,bitmap.width,bitmap.height,m,true);strokes.clear();invalidate()
     }
-    fun cropSquare(){val size=min(bitmap.width,bitmap.height)
+    fun cropSquare(){saveStep();val size=min(bitmap.width,bitmap.height)
         bitmap=Bitmap.createBitmap(bitmap,(bitmap.width-size)/2,(bitmap.height-size)/2,size,size)
         strokes.clear();invalidate()
     }
@@ -560,6 +567,10 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
     var caption by remember(item.id) {mutableStateOf("")}
     var drawing by remember(item.id) {mutableStateOf(false)}
     var savePrompt by remember {mutableStateOf(false)}
+    var cropPrompt by remember {mutableStateOf(false)}
+    var discardPrompt by remember {mutableStateOf(false)}
+    var dirty by remember {mutableStateOf(false)}
+    var undoRevision by remember {mutableIntStateOf(0)}
     var overlayScale by remember {mutableFloatStateOf(0.45f)}
     var overlayX by remember {mutableFloatStateOf(0.5f)}
     var overlayY by remember {mutableFloatStateOf(0.5f)}
@@ -567,36 +578,55 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
     var textY by remember {mutableFloatStateOf(0.5f)}
     val overlayPicker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()){uri->
         if(uri!=null && context.contentResolver.getType(uri)!="image/gif"){
-            editor.overlay=readImage(context,uri);editor.invalidate()
+            editor.overlay=readImage(context,uri);dirty=true;editor.invalidate()
         } else if(uri!=null)Toast.makeText(context,"疊圖僅支援靜態圖片",Toast.LENGTH_SHORT).show()
     }
+    val requestBack={
+        editor.drawMode=false
+        drawing=false
+        if(cropPrompt) cropPrompt=false
+        else if(dirty) discardPrompt=true
+        else onBack()
+    }
+    BackHandler {requestBack()}
     Column(Modifier.fillMaxSize().background(PackPaper).padding(12.dp)) {
         Row(verticalAlignment=Alignment.CenterVertically) {
-            IconButton(onClick=onBack){Icon(Icons.Outlined.ArrowBack,"取消")}
+            TextButton(onClick=requestBack){Text("取消",color=PackInk)}
             Text("梗圖編輯器",modifier=Modifier.weight(1f),color=PackInk)
-            Button(onClick={editor.drawMode=false;savePrompt=true}){Text("完成")}
+            TextButton(enabled=undoRevision>0,onClick={editor.undoStep();undoRevision--;dirty=true}) {
+                Icon(Icons.Outlined.Undo,"撤銷")
+            }
+            Button(onClick={editor.drawMode=false;drawing=false;savePrompt=true}){Text("保存")}
         }
         AndroidView(factory={editor},modifier=Modifier.fillMaxWidth().weight(1f))
-        OutlinedTextField(caption,onValueChange={caption=it;editor.text=it;editor.invalidate()},
+        OutlinedTextField(caption,onValueChange={caption=it;editor.text=it;dirty=true;editor.invalidate()},
             label={Text("梗圖文字")},modifier=Modifier.fillMaxWidth(),singleLine=true)
         Text("文字水平位置",style=MaterialTheme.typography.labelSmall)
-        Slider(value=textX,onValueChange={textX=it;editor.textX=it;editor.invalidate()})
+        Slider(value=textX,onValueChange={textX=it;editor.textX=it;dirty=true;editor.invalidate()})
         Text("文字垂直位置",style=MaterialTheme.typography.labelSmall)
-        Slider(value=textY,onValueChange={textY=it;editor.textY=it;editor.invalidate()})
+        Slider(value=textY,onValueChange={textY=it;editor.textY=it;dirty=true;editor.invalidate()})
         if(editor.overlay!=null) {
             Text("疊圖大小／水平位置／垂直位置",style=MaterialTheme.typography.labelSmall)
-            Slider(overlayScale,onValueChange={overlayScale=it;editor.overlayScale=it;editor.invalidate()},valueRange=0.1f..1f)
-            Slider(overlayX,onValueChange={overlayX=it;editor.overlayX=it;editor.invalidate()})
-            Slider(overlayY,onValueChange={overlayY=it;editor.overlayY=it;editor.invalidate()})
+            Slider(overlayScale,onValueChange={overlayScale=it;editor.overlayScale=it;dirty=true;editor.invalidate()},valueRange=0.1f..1f)
+            Slider(overlayX,onValueChange={overlayX=it;editor.overlayX=it;dirty=true;editor.invalidate()})
+            Slider(overlayY,onValueChange={overlayY=it;editor.overlayY=it;dirty=true;editor.invalidate()})
         }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly,verticalAlignment=Alignment.CenterVertically) {
-            TextButton(onClick={editor.cropSquare()}){Text("方形裁切")}
-            TextButton(onClick={editor.rotate()}){Text("旋轉")}
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically) {
+            TextButton(onClick={cropPrompt=true}){Text("方形裁切")}
+            TextButton(onClick={editor.rotate();dirty=true;undoRevision++}){Text("旋轉")}
             TextButton(onClick={drawing=!drawing;editor.drawMode=drawing}){Text(if(drawing)"停止塗鴉" else "塗鴉")}
-            TextButton(onClick={editor.undoStroke()}){Text("復原")}
+            TextButton(onClick={editor.undoStroke();dirty=true}){Text("復原塗鴉")}
             TextButton(onClick={overlayPicker.launch("image/*")}){Text("疊圖")}
         }
     }
+    if(cropPrompt) PackDialog(onDismissRequest={cropPrompt=false},
+        title={Text("套用方形裁切？")},text={Text("可取消裁切並返回編輯畫面。")},
+        confirmButton={Button(onClick={editor.cropSquare();undoRevision++;dirty=true;cropPrompt=false}){Text("套用裁切")}},
+        dismissButton={TextButton(onClick={cropPrompt=false}){Text("取消裁切")}})
+    if(discardPrompt) PackDialog(onDismissRequest={discardPrompt=false},
+        title={Text("放棄未保存的編輯？")},
+        confirmButton={TextButton(onClick={discardPrompt=false;onBack()}){Text("放棄變更",color=Color(0xFFAF332B))}},
+        dismissButton={TextButton(onClick={discardPrompt=false}){Text("繼續編輯")}})
     if(savePrompt) PackDialog(onDismissRequest={savePrompt=false},title={Text("儲存編輯結果")},
         text={Text("更新目前圖片，或另存為同圖集內的新圖片？手機相簿原檔不會修改。")},
         confirmButton={Column {
