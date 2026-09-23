@@ -30,6 +30,7 @@ data class StickerItem(
     val mimeType: String,
     val localCachePath: String? = null,
     val useCount: Int = 0,
+    val favoriteAt: Long? = null,
     val lastUsedAt: Long? = null,
     val occurrences: List<MediaOccurrence> = emptyList(),
     val categoryIds: List<String> = emptyList(),
