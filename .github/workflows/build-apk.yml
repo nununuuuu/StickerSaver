@@ -2,9 +2,6 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/build-trigger-v043'
 
 permissions:
   contents: write
