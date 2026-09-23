@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +80,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
     var dropTargetId by remember { mutableStateOf<String?>(null) }
+    var previewOrder by remember { mutableStateOf<List<String>>(emptyList()) }
     val packGridState=rememberLazyGridState()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if(uris.isNotEmpty()) {
@@ -157,7 +159,11 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 }
             }
         } else {
-            val shown=images.filter {it.packId==selectedPack}.sortedBy {it.order}
+            val storedImages=images.filter {it.packId==selectedPack}.sortedBy {it.order}
+            val shown=if(draggingId!=null && previewOrder.isNotEmpty()) {
+                val rank=previewOrder.withIndex().associate {it.value to it.index}
+                storedImages.sortedBy {rank[it.id] ?: Int.MAX_VALUE}
+            } else storedImages
             if(bulkEditing) {
                 Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text("已選 ${selectedIds.size} 張",color=PackInk,modifier=Modifier.weight(1f))
@@ -186,8 +192,9 @@ fun ImagePacksScreen(store:ImagePackStore) {
             ) {
                 items(shown,key={it.id}) { item->
                     val isSelected=item.id in selectedIds
-                    // Keep the pointer handler attached to the image for the entire gesture.
-                    // Persist the reorder only on release, so recomposition cannot cancel an active drag.
+                    val isDragging=!bulkEditing && draggingId==item.id
+                    val isDropTarget=!bulkEditing && dropTargetId==item.id && draggingId!=null
+                    // Preview the order locally. Persist it only when the gesture ends.
                     val draggedModifier=if(bulkEditing) Modifier else Modifier.pointerInput(item.id) {
                         detectDragGesturesAfterLongPress(
                             onDragStart={ touch->
@@ -196,39 +203,74 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                 dragOffset=Offset.Zero
                                 dragOrigin=if(visible==null) touch else
                                     Offset(visible.offset.x.toFloat(),visible.offset.y.toFloat())+touch
+                                previewOrder=storedImages.map {it.id}
                                 dropTargetId=item.id
                             },
                             onDrag={change,delta->
                                 change.consume()
                                 dragOffset+=delta
                                 val pointer=dragOrigin+dragOffset
-                                dropTargetId=packGridState.layoutInfo.visibleItemsInfo
-                                    .filter {it.key is String}
-                                    .minByOrNull { visible->
-                                        val dx=visible.offset.x+visible.size.width/2f-pointer.x
-                                        val dy=visible.offset.y+visible.size.height/2f-pointer.y
-                                        dx*dx+dy*dy
-                                    }?.key as? String ?: item.id
+                                val target=packGridState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull {visible->
+                                        visible.key!=item.id &&
+                                        pointer.x>=visible.offset.x &&
+                                        pointer.x<visible.offset.x+visible.size.width &&
+                                        pointer.y>=visible.offset.y &&
+                                        pointer.y<visible.offset.y+visible.size.height
+                                    }
+                                if(target!=null) {
+                                    val targetId=target.key as? String
+                                    if(targetId!=null && targetId!=dropTargetId) {
+                                        val order=previewOrder.toMutableList()
+                                        val from=order.indexOf(item.id)
+                                        val to=order.indexOf(targetId)
+                                        if(from>=0 && to>=0 && from!=to) {
+                                            order.removeAt(from)
+                                            order.add(to,item.id)
+                                            previewOrder=order
+                                            dropTargetId=targetId
+                                        }
+                                    }
+                                }
                             },
                             onDragEnd={
-                                val target=dropTargetId
+                                val completed=previewOrder.toList()
                                 draggingId=null
-                                dragOffset=Offset.Zero
                                 dropTargetId=null
-                                if(target!=null && target!=item.id) store.reorderTo(item.id,target)
+                                dragOffset=Offset.Zero
+                                previewOrder=emptyList()
+                                if(completed.isNotEmpty()) store.reorderToOrder(completed)
                             },
                             onDragCancel={
                                 draggingId=null
-                                dragOffset=Offset.Zero
                                 dropTargetId=null
+                                dragOffset=Offset.Zero
+                                previewOrder=emptyList()
                             }
                         )
                     }
+                    val currentTile=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
+                    val finger=dragOrigin+dragOffset
+                    val lift=if(isDragging && currentTile!=null)
+                        Offset(
+                            finger.x-currentTile.offset.x-currentTile.size.width/2f,
+                            finger.y-currentTile.offset.y-currentTile.size.height/2f
+                        ) else Offset.Zero
                     Column(
                         Modifier
+                            .zIndex(if(isDragging) 2f else 0f)
+                            .graphicsLayer {
+                                if(isDragging) {
+                                    translationX=lift.x
+                                    translationY=lift.y
+                                    scaleX=1.035f
+                                    scaleY=1.035f
+                                    shadowElevation=4.dp.toPx()
+                                    shape=RoundedCornerShape(14.dp)
+                                }
+                            }
                             .background(
-                                if(isSelected || (!bulkEditing && dropTargetId==item.id && draggingId!=null))
-                                    PackCard else PackPaper,
+                                if(isSelected || isDragging || isDropTarget) PackCard else PackPaper,
                                 RoundedCornerShape(14.dp)
                             )
                             .clickable {
