@@ -32,6 +32,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.HorizontalScrollView
 import android.inputmethodservice.InputMethodService
 import androidx.core.content.FileProvider
 import coil3.ImageLoader
@@ -72,6 +73,14 @@ class StickerKeyboardService : InputMethodService() {
     private var updateDownloading = false
     private var keyboardSwitchInProgress = false
     private var keyboardCheckRunning = false
+    private var packMode = false
+    private var selectedPackId: String? = null
+    private lateinit var modeRow: LinearLayout
+    private lateinit var packCovers: LinearLayout
+    private lateinit var packStrip: HorizontalScrollView
+    private lateinit var stickerTabs: LinearLayout
+    private val imagePacks by lazy { ImagePackStore(applicationContext) }
+    private var currentPackImages: List<PackImage> = emptyList()
 
     override fun onCreate() {
         super.onCreate()
@@ -166,6 +175,13 @@ class StickerKeyboardService : InputMethodService() {
         renderUpdateBanner()
         checkKeyboardUpdates()
 
+        modeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        modeRow.addView(tabText("貼圖庫") {packMode=false;showKeyboardMode()},LinearLayout.LayoutParams(0,dp(32),1f))
+        modeRow.addView(tabText("圖集") {packMode=true;showKeyboardMode()},LinearLayout.LayoutParams(0,dp(32),1f))
+        root.addView(modeRow)
+        packCovers = LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
+        packStrip = HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false;visibility=View.GONE;addView(packCovers)}
+        root.addView(packStrip,linear(-1,dp(54)))
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -182,6 +198,7 @@ class StickerKeyboardService : InputMethodService() {
         })
         tabs.addView(allTab, LinearLayout.LayoutParams(0, dp(38), 1f).apply { marginStart = dp(4) })
         root.addView(tabs)
+        stickerTabs = tabs
 
         grid = GridView(this).apply {
             numColumns = 4
@@ -192,10 +209,12 @@ class StickerKeyboardService : InputMethodService() {
             clipToPadding = false
             selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
-                this@StickerKeyboardService.adapter?.itemAt(position)?.let(::insertSticker)
+                if(packMode) currentPackImages.getOrNull(position)?.let(::insertPackImage)
+                else this@StickerKeyboardService.adapter?.itemAt(position)?.let(::insertSticker)
             }
             onItemLongClickListener = AdapterView.OnItemLongClickListener { _, _, position, _ ->
-                this@StickerKeyboardService.adapter?.itemAt(position)?.let(::shareSticker)
+                if(packMode) currentPackImages.getOrNull(position)?.let(::sharePackImage)
+                else this@StickerKeyboardService.adapter?.itemAt(position)?.let(::shareSticker)
                 true
             }
         }
@@ -203,6 +222,7 @@ class StickerKeyboardService : InputMethodService() {
 
         updateCategorySpinner()
         refreshGrid()
+        showKeyboardMode()
         return root
     }
 
@@ -211,6 +231,7 @@ class StickerKeyboardService : InputMethodService() {
         keyboardUpdate = updateChecker.cachedKeyboardUpdate()
         renderUpdateBanner()
         checkKeyboardUpdates()
+        if(::grid.isInitialized)showKeyboardMode()
     }
 
     private fun checkKeyboardUpdates() {
@@ -308,7 +329,7 @@ class StickerKeyboardService : InputMethodService() {
     }
 
     private fun refreshGrid() {
-        if (!::grid.isInitialized) return
+        if (!::grid.isInitialized || packMode) return
 
         val base = when (scopeMode) {
             ScopeMode.RECENT -> allStickers.filter { it.lastUsedAt != null }.sortedByDescending { it.lastUsedAt }.take(20)
@@ -353,6 +374,97 @@ class StickerKeyboardService : InputMethodService() {
         style(recentTab, scopeMode == ScopeMode.RECENT)
         style(frequentTab, scopeMode == ScopeMode.FREQUENT)
         style(allTab, scopeMode == ScopeMode.ALL)
+    }
+
+    private fun showKeyboardMode() {
+        if(!::grid.isInitialized || !::modeRow.isInitialized)return
+        stickerTabs.visibility=if(packMode)View.GONE else View.VISIBLE
+        search.visibility=if(packMode)View.GONE else View.VISIBLE
+        categorySpinner.visibility=if(packMode)View.GONE else View.VISIBLE
+        packStrip.visibility=if(packMode)View.VISIBLE else View.GONE
+        (modeRow.getChildAt(0) as TextView).background=roundedBackground(if(packMode)Color.TRANSPARENT else WARM_SELECTED,dp(16).toFloat())
+        (modeRow.getChildAt(1) as TextView).background=roundedBackground(if(packMode)WARM_SELECTED else Color.TRANSPARENT,dp(16).toFloat())
+        if(packMode) {
+            refreshPackGrid()
+        } else {
+            grid.adapter=adapter
+            refreshGrid()
+        }
+    }
+
+    private fun refreshPackGrid() {
+        if(!packMode || !::grid.isInitialized)return
+        // Reload persisted content when opening the keyboard after edits in the App.
+        val store=ImagePackStore(applicationContext)
+        val packs=store.packs.value.sortedBy {it.order}
+        val images=store.images.value
+        if(selectedPackId!=null && packs.none {it.id==selectedPackId})selectedPackId=null
+        if(selectedPackId==null && packs.isNotEmpty())selectedPackId=packs.first().id
+        packCovers.removeAllViews()
+        val unclassified=images.filter {it.packId==null}
+        if(unclassified.isNotEmpty()) {
+            packCovers.addView(TextView(this).apply {
+                text="未分類";gravity=Gravity.CENTER;textSize=12f
+                setTextColor(INK)
+                background=roundedBackground(if(selectedPackId==null)WARM_SELECTED else WARM_CARD,dp(13).toFloat())
+                setOnClickListener {selectedPackId=null;refreshPackGrid()}
+            },linear(dp(67),dp(46)))
+        }
+        for(pack in packs) {
+            val image=images.firstOrNull {it.id==pack.coverId}?:images.firstOrNull {it.packId==pack.id}
+            val cover=ImageView(this).apply {
+                scaleType=ImageView.ScaleType.CENTER_CROP
+                contentDescription=pack.name
+                background=roundedBackground(if(selectedPackId==pack.id)WARM_SELECTED else WARM_CARD,dp(12).toFloat())
+                setPadding(dp(3),dp(3),dp(3),dp(3))
+                if(image!=null)load(File(image.display),imageLoader)
+                setOnClickListener {selectedPackId=pack.id;refreshPackGrid()}
+            }
+            packCovers.addView(cover,LinearLayout.LayoutParams(dp(49),dp(49)).apply {marginEnd=dp(7)})
+        }
+        currentPackImages=images.filter {it.packId==selectedPackId}.sortedBy {it.order}
+        grid.adapter=object:BaseAdapter() {
+            override fun getCount()=currentPackImages.size
+            override fun getItem(position:Int):Any=currentPackImages[position]
+            override fun getItemId(position:Int)=currentPackImages[position].id.hashCode().toLong()
+            override fun getView(position:Int,convertView:View?,parent:android.view.ViewGroup?):View {
+                val view=(convertView as? ImageView)?:ImageView(this@StickerKeyboardService).apply {
+                    scaleType=ImageView.ScaleType.CENTER_INSIDE
+                    background=roundedBackground(TILE,dp(15).toFloat())
+                    layoutParams=android.widget.AbsListView.LayoutParams(-1,dp(76))
+                    setPadding(dp(5),dp(5),dp(5),dp(5))
+                }
+                val item=currentPackImages[position]
+                view.load(File(item.display),imageLoader)
+                view.contentDescription=if(item.mime=="image/gif")"GIF 動圖" else "圖片"
+                return view
+            }
+        }
+    }
+
+    private fun insertPackImage(item:PackImage) {
+        if(!supportsRichImage(currentInputEditorInfo,item.mime)) {
+            Toast.makeText(this,"此輸入框不支援圖片，長按圖片可分享",Toast.LENGTH_SHORT).show()
+            return
+        }
+        runCatching {
+            val file=File(item.display)
+            val uri=FileProvider.getUriForFile(this,packageName+".fileprovider",file)
+            val description=ClipDescription("圖片梗圖",arrayOf(item.mime,"image/*"))
+            val input=InputContentInfo(uri,description,null)
+            currentInputConnection?.commitContent(input,InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,null)==true
+        }.onFailure {Toast.makeText(this,"插入圖片失敗，請長按分享",Toast.LENGTH_SHORT).show()}
+            .onSuccess {if(!it)Toast.makeText(this,"此輸入框不支援圖片，請長按分享",Toast.LENGTH_SHORT).show()}
+    }
+
+    private fun sharePackImage(item:PackImage) {
+        runCatching {
+            val file=File(item.display)
+            val uri=FileProvider.getUriForFile(this,packageName+".fileprovider",file)
+            val intent=Intent(Intent.ACTION_SEND).setType(item.mime)
+                .putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(Intent.createChooser(intent,"分享圖片梗圖").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure {Toast.makeText(this,"分享圖片失敗",Toast.LENGTH_SHORT).show()}
     }
 
     private fun insertSticker(sticker: StickerItem) {
