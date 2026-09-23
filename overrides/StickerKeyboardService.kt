@@ -552,29 +552,25 @@ class StickerKeyboardService : InputMethodService() {
         if (keyboardSwitchInProgress) return
         keyboardSwitchInProgress = true
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            showKeyboardPicker()
-            keyboardSwitchInProgress = false
-            return
+        // A second switch while the first IME is starting can hide the newly
+        // selected keyboard. Make exactly one framework switch per tap.
+        val switched = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching { switchToPreviousInputMethod() }.getOrDefault(false)
+        } else {
+            @Suppress("DEPRECATION")
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            @Suppress("DEPRECATION")
+            runCatching { imm.switchToLastInputMethod(window.window?.attributes?.token) }
+                .getOrDefault(false)
         }
-
-        val accepted = runCatching { switchToPreviousInputMethod() }.getOrDefault(false)
+        if (!switched) {
+            // No last keyboard to return to; let Android select the next IME.
+            showKeyboardPicker()
+        }
+        // Do not call switchToNextInputMethod(), hideSoftInput(), or requestHideSelf()
+        // after a successful switch: Android now owns the hand-off.
         serviceScope.launch {
-            delay(380)
-            val currentIme = runCatching {
-                Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
-            }.getOrNull()
-            val stillHere = currentIme?.contains(packageName, ignoreCase = true) != false
-            if (!accepted || stillHere) {
-                val switched = runCatching { switchToNextInputMethod(false) }.getOrDefault(false)
-                delay(360)
-                val verifiedIme = runCatching {
-                    Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
-                }.getOrNull()
-                if (!switched || verifiedIme?.contains(packageName, ignoreCase = true) != false) {
-                    showKeyboardPicker()
-                }
-            }
+            delay(650)
             keyboardSwitchInProgress = false
         }
     }
