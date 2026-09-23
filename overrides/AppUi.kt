@@ -68,7 +68,7 @@ internal fun isInternalSourceClipboardCopy(context: Context, url: String): Boole
         copiedAt > 0L && System.currentTimeMillis() - copiedAt in 0L..5000L
 }
 
-private enum class Tab { HOME, LIBRARY, SOURCES, SETTINGS }
+private enum class Tab { HOME, LIBRARY, PACKS, SOURCES, SETTINGS }
 private enum class LibraryTab { RECENT, FAVORITES, ALL }
 private enum class CategoryDelimiter { PLUS, SLASH, SPACE }
 
@@ -77,6 +77,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
     val repo = (activity.application as StickerApplication).repository
     val stickers by repo.stickers.collectAsState()
     val sources by repo.sources.collectAsState()
+    val packStore = remember { ImagePackStore(activity.applicationContext) }
     var tab by remember { mutableStateOf(Tab.HOME) }
     val context = LocalContext.current
     val checker = remember { UpdateChecker(context) }
@@ -188,6 +189,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                 NavigationBar(containerColor = Paper, tonalElevation = 0.dp) {
                     nav(Tab.HOME, tab, Icons.Outlined.AddCircle, "新增") { tab = it }
                     nav(Tab.LIBRARY, tab, Icons.Outlined.GridView, "貼圖") { tab = it }
+                    nav(Tab.PACKS, tab, Icons.Outlined.Collections, "圖集") { tab = it }
                     nav(Tab.SOURCES, tab, Icons.Outlined.History, "來源") { tab = it }
                     nav(Tab.SETTINGS, tab, Icons.Outlined.Settings, "設定") { tab = it }
                 }
@@ -197,6 +199,7 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
                 when (tab) {
                     Tab.HOME -> Home(activity, repo, stickers, pendingInput)
                     Tab.LIBRARY -> Library(repo, stickers)
+                    Tab.PACKS -> ImagePacksScreen(packStore)
                     Tab.SOURCES -> Sources(repo, sources, stickers)
                     Tab.SETTINGS -> Settings(repo, checker, { update = it }, { error = it })
                 }
