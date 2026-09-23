@@ -60,8 +60,17 @@ class UpdateChecker(private val context: Context) {
         )
     }
 
-    fun shouldCheckKeyboard(now: Long = System.currentTimeMillis()): Boolean =
-        autoCheckEnabled && now - prefs.getLong("keyboard_last_attempt_at", 0L) >= 24L * 60L * 60L * 1000L
+    fun shouldCheckKeyboard(now: Long = System.currentTimeMillis()): Boolean {
+        if (!autoCheckEnabled) return false
+        val lastAttempt = prefs.getLong("keyboard_last_attempt_at", 0L)
+        val interval = if (prefs.getLong("keyboard_last_success_at", 0L) >= lastAttempt && lastAttempt > 0L)
+            24L * 60L * 60L * 1000L else 15L * 60L * 1000L
+        return now - lastAttempt >= interval
+    }
+
+    fun markKeyboardCheckSuccess(now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("keyboard_last_success_at", now).apply()
+    }
 
     fun markKeyboardCheckAttempt(now: Long = System.currentTimeMillis()) {
         prefs.edit().putLong("keyboard_last_attempt_at", now).apply()
