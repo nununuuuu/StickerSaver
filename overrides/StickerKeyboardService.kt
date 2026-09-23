@@ -59,6 +59,7 @@ class StickerKeyboardService : InputMethodService() {
     private var categoryMode: String? = null
     private var adapter: StickerAdapter? = null
     private var displayedStickers: List<StickerItem> = emptyList()
+    private var categoryIdsInMenu: List<String?> = emptyList()
     private lateinit var updateBanner: TextView
     private val updateChecker by lazy { UpdateChecker(this) }
     private var keyboardUpdate: UpdateInfo? = null
@@ -121,7 +122,7 @@ class StickerKeyboardService : InputMethodService() {
                     categoryMode = when (position) {
                         0 -> null
                         1 -> "__uncategorized__"
-                        else -> allCategories.sortedBy { it.name.lowercase() }.getOrNull(position - 2)?.id
+                        else -> categoryIdsInMenu.getOrNull(position)
                     }
                     refreshGrid()
                 }
@@ -252,49 +253,35 @@ class StickerKeyboardService : InputMethodService() {
 
     private fun updateCategorySpinner() {
         if (!::categorySpinner.isInitialized) return
-        val current = categoryMode
         val sorted = allCategories.sortedBy { it.name.lowercase() }
-        val labels = mutableListOf("全部", "未分類")
-        labels += sorted.map { category ->
-            val count = allStickers.count { category.id in it.categoryIds }
-            category.name + "  " + count
-        }
-
-        val spinnerAdapter = object : android.widget.ArrayAdapter<String>(
-            this,
-            android.R.layout.simple_spinner_dropdown_item,
-            labels
+        val ids = listOf<String?>(null, "__uncategorized__") + sorted.map { it.id }
+        if (ids == categoryIdsInMenu) return
+        categoryIdsInMenu = ids
+        val labels = listOf("全部分類", "未分類") + sorted.map { it.name }
+        categorySpinner.adapter = object : android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_spinner_dropdown_item, labels
         ) {
-            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                return super.getView(position, convertView, parent).apply {
-                    (this as? TextView)?.apply {
-                        setTextColor(INK)
-                        textSize = 14f
-                        gravity = Gravity.CENTER_VERTICAL
-                        setPadding(dp(10), 0, dp(8), 0)
-                    }
+            override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
+                TextView(context).apply {
+                    text = labels.getOrElse(position) { "全部分類" } + "  ▾"
+                    textSize = 13f
+                    setTextColor(INK)
+                    gravity = Gravity.CENTER
+                    setPadding(dp(4), 0, dp(4), 0)
+                    isSingleLine = true
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                 }
-            }
 
-            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View {
-                return super.getDropDownView(position, convertView, parent).apply {
-                    (this as? TextView)?.apply {
-                        setTextColor(INK)
-                        textSize = 14f
-                        setPadding(dp(14), dp(10), dp(14), dp(10))
-                        setBackgroundColor(TILE)
-                    }
+            override fun getDropDownView(position: Int, convertView: View?, parent: android.view.ViewGroup): View =
+                TextView(context).apply {
+                    text = labels.getOrElse(position) { "全部分類" }
+                    textSize = 14f
+                    setTextColor(INK)
+                    setPadding(dp(14), dp(10), dp(14), dp(10))
+                    setBackgroundColor(TILE)
                 }
-            }
         }
-        categorySpinner.adapter = spinnerAdapter
-
-        val targetIndex = when (current) {
-            null -> 0
-            "__uncategorized__" -> 1
-            else -> sorted.indexOfFirst { it.id == current }.takeIf { it >= 0 }?.plus(2) ?: 0
-        }
-        categorySpinner.setSelection(targetIndex, false)
+        categorySpinner.setSelection(ids.indexOf(categoryMode).takeIf { it >= 0 } ?: 0, false)
     }
 
     private fun refreshGrid() {
@@ -319,8 +306,13 @@ class StickerKeyboardService : InputMethodService() {
         val shown = if (query.isBlank()) categoryFiltered
         else categoryFiltered.filter { sticker -> sticker.categoryIds.any { it in queryCategoryIds } }
 
-        adapter = StickerAdapter(this, shown, imageLoader)
-        grid.adapter = adapter
+        if (adapter == null) {
+            adapter = StickerAdapter(this, shown, imageLoader)
+            grid.adapter = adapter
+        } else if (shown != displayedStickers) {
+            adapter?.updateItems(shown)
+        }
+        displayedStickers = shown
         updateTabStyle()
     }
 
@@ -491,9 +483,10 @@ class StickerKeyboardService : InputMethodService() {
 
     private class StickerAdapter(
         private val context: Context,
-        private val items: List<StickerItem>,
+        private var items: List<StickerItem>,
         private val imageLoader: ImageLoader,
     ) : BaseAdapter() {
+        fun updateItems(next: List<StickerItem>) { items = next; notifyDataSetChanged() }
         override fun getCount(): Int = items.size
         override fun getItem(position: Int): StickerItem = items[position]
         override fun getItemId(position: Int): Long = items[position].id.hashCode().toLong()
@@ -525,12 +518,12 @@ class StickerKeyboardService : InputMethodService() {
             val star = frame.getChildAt(1) as TextView
             val model: Any = sticker.localCachePath?.takeIf { File(it).isFile && File(it).length() > 0L }?.let(::File)
                 ?: sticker.mediaUrl
-            image.setImageDrawable(null)
-            image.load(model, imageLoader) {
+            if (image.tag != sticker.id || image.drawable == null) image.load(model, imageLoader) {
                 listener(onError = { _, _ ->
                     if (model is File) image.load(sticker.mediaUrl, imageLoader)
                 })
             }
+            image.tag = sticker.id
             star.text = if (sticker.favoriteAt != null) "★" else "☆"
             star.setTextColor(if (sticker.favoriteAt != null) Color.rgb(214, 161, 58) else MUTED)
             star.setOnClickListener { (context.applicationContext as StickerApplication).repository.toggleFavorite(sticker.id) }
