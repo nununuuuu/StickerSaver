@@ -81,7 +81,6 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var dragTouch by remember { mutableStateOf(Offset.Zero) }
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
     var dropTargetId by remember { mutableStateOf<String?>(null) }
-    var previewOrder by remember { mutableStateOf<List<String>>(emptyList()) }
     val packGridState=rememberLazyGridState()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if(uris.isNotEmpty()) {
@@ -160,11 +159,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 }
             }
         } else {
-            val storedImages=images.filter {it.packId==selectedPack}.sortedBy {it.order}
-            val shown=if(draggingId!=null && previewOrder.isNotEmpty()) {
-                val rank=previewOrder.withIndex().associate {it.value to it.index}
-                storedImages.sortedBy {rank[it.id] ?: Int.MAX_VALUE}
-            } else storedImages
+            val shown=images.filter {it.packId==selectedPack}.sortedBy {it.order}
             if(bulkEditing) {
                 Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically) {
                     Text("已選 ${selectedIds.size} 張",color=PackInk,modifier=Modifier.weight(1f))
@@ -195,7 +190,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                     val isSelected=item.id in selectedIds
                     val isDragging=!bulkEditing && draggingId==item.id
                     val isDropTarget=!bulkEditing && dropTargetId==item.id && draggingId!=null
-                    // Preview the order locally. Persist it only when the gesture ends.
+                    // Keep all grid tiles stationary while the dragged tile follows the finger.
                     val draggedModifier=if(bulkEditing) Modifier else Modifier.pointerInput(item.id) {
                         detectDragGesturesAfterLongPress(
                             onDragStart={ touch->
@@ -205,7 +200,6 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                 dragOffset=Offset.Zero
                                 dragOrigin=if(visible==null) touch else
                                     Offset(visible.offset.x.toFloat(),visible.offset.y.toFloat())+touch
-                                previewOrder=storedImages.map {it.id}
                                 dropTargetId=item.id
                             },
                             onDrag={change,delta->
@@ -220,34 +214,20 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                         pointer.y>=visible.offset.y &&
                                         pointer.y<visible.offset.y+visible.size.height
                                     }
-                                if(target!=null) {
-                                    val targetId=target.key as? String
-                                    if(targetId!=null && targetId!=dropTargetId) {
-                                        val order=previewOrder.toMutableList()
-                                        val from=order.indexOf(item.id)
-                                        val to=order.indexOf(targetId)
-                                        if(from>=0 && to>=0 && from!=to) {
-                                            order.removeAt(from)
-                                            order.add(to,item.id)
-                                            previewOrder=order
-                                            dropTargetId=targetId
-                                        }
-                                    }
-                                }
+                                if(target!=null) dropTargetId=target.key as? String
+
                             },
                             onDragEnd={
-                                val completed=previewOrder.toList()
+                                val target=dropTargetId
                                 draggingId=null
                                 dropTargetId=null
                                 dragOffset=Offset.Zero
-                                previewOrder=emptyList()
-                                if(completed.isNotEmpty()) store.reorderToOrder(completed)
+                                if(target!=null && target!=item.id) store.reorderTo(item.id,target)
                             },
                             onDragCancel={
                                 draggingId=null
                                 dropTargetId=null
                                 dragOffset=Offset.Zero
-                                previewOrder=emptyList()
                             }
                         )
                     }
