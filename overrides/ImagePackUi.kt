@@ -20,12 +20,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -33,6 +35,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -63,6 +68,14 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var showMove by remember { mutableStateOf<PackImage?>(null) }
     var pickForPack by remember { mutableStateOf<String?>(null) }
     var pickNew by remember { mutableStateOf(false) }
+    var bulkEditing by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var bulkMove by remember { mutableStateOf(false) }
+    var bulkDeleteConfirm by remember { mutableStateOf(false) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragTranslation by remember { mutableStateOf(Offset.Zero) }
+    var dropTargetId by remember { mutableStateOf<String?>(null) }
+    val packGridState=rememberLazyGridState()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if(uris.isNotEmpty()) {
             val packId=if(pickNew) {
@@ -77,7 +90,13 @@ fun ImagePacksScreen(store:ImagePackStore) {
         }
         pickNew=false;pickForPack=null;creating=false
     }
-    BackHandler(inPack || editing!=null) { if(editing!=null) editing=null else inPack=false }
+    BackHandler(inPack || editing!=null || bulkEditing) {
+        when {
+            editing!=null -> editing=null
+            bulkEditing -> {bulkEditing=false;selectedIds=emptySet()}
+            else -> inPack=false
+        }
+    }
     if(editing!=null) {
         val item=editing!!
         PackImageEditor(item,store,onBack={editing=null},onSaved={editing=null})
@@ -86,13 +105,23 @@ fun ImagePacksScreen(store:ImagePackStore) {
     val currentPack=packs.firstOrNull {it.id==selectedPack}
     Column(Modifier.fillMaxSize().background(PackPaper).padding(horizontal=14.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically) {
-            if(inPack) IconButton(onClick={inPack=false}) {Icon(Icons.Outlined.ArrowBack,"返回圖集")}
+            if(inPack) IconButton(onClick={
+                bulkEditing=false;selectedIds=emptySet();inPack=false
+            }) {Icon(Icons.Outlined.ArrowBack,"返回圖集")}
             Text(if(!inPack)"自訂圖集" else currentPack?.name?:"未分類圖片",
                 style=MaterialTheme.typography.titleLarge,color=PackInk,modifier=Modifier.weight(1f))
             if(!inPack) FilledTonalButton(onClick={newName="";creating=true}) {
                 Icon(Icons.Outlined.Add,"新增圖集");Spacer(Modifier.width(4.dp));Text("新增")
-            } else FilledTonalButton(onClick={pickNew=false;pickForPack=selectedPack;picker.launch("image/*")}) {
-                Icon(Icons.Outlined.Add,"加入圖片");Text("加入圖片")
+            } else {
+                if(!bulkEditing) TextButton(onClick={bulkEditing=true;selectedIds=emptySet()}) {
+                    Icon(Icons.Outlined.Checklist,"批量編輯")
+                    Spacer(Modifier.width(3.dp))
+                    Text("批量編輯")
+                }
+                FilledTonalButton(onClick={pickNew=false;pickForPack=selectedPack;picker.launch("image/*")}) {
+                    Icon(Icons.Outlined.Add,"加入")
+                    Text("加入")
+                }
             }
         }
         if(!inPack) {
@@ -126,19 +155,110 @@ fun ImagePacksScreen(store:ImagePackStore) {
             }
         } else {
             val shown=images.filter {it.packId==selectedPack}.sortedBy {it.order}
+            if(bulkEditing) {
+                Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text("已選 ${selectedIds.size} 張",color=PackInk,modifier=Modifier.weight(1f))
+                    TextButton(onClick={selectedIds=if(selectedIds.size==shown.size) emptySet() else shown.map {it.id}.toSet()}) {
+                        Text(if(selectedIds.size==shown.size)"取消全選" else "全選")
+                    }
+                    TextButton(onClick={bulkEditing=false;selectedIds=emptySet()}){Text("完成")}
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
+                    TextButton(enabled=selectedIds.isNotEmpty(),onClick={bulkMove=true}) {
+                        Icon(Icons.Outlined.DriveFileMove,"移動");Text("移動")
+                    }
+                    TextButton(enabled=selectedIds.isNotEmpty(),onClick={bulkDeleteConfirm=true}) {
+                        Icon(Icons.Outlined.Delete,"刪除",tint=Color(0xFFB3261E))
+                        Text("刪除",color=Color(0xFFB3261E))
+                    }
+                }
+            }
             if(shown.isEmpty()) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center) {
                 Text("尚無圖片，點右上角加入 PNG、JPG、JPEG 或 GIF",color=Color.Gray)
-            } else LazyVerticalGrid(columns=GridCells.Fixed(3),horizontalArrangement=Arrangement.spacedBy(8.dp),
-                verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            } else LazyVerticalGrid(
+                state=packGridState,
+                columns=GridCells.Fixed(3),
+                horizontalArrangement=Arrangement.spacedBy(8.dp),
+                verticalArrangement=Arrangement.spacedBy(8.dp)
+            ) {
                 items(shown,key={it.id}) { item->
-                    Column(Modifier.background(PackCard,RoundedCornerShape(14.dp)).clickable {selectedImage=item}.padding(5.dp)) {
-                        AsyncImage(model=File(item.display),contentDescription="檢視圖片",
-                            modifier=Modifier.fillMaxWidth().height(92.dp))
-                        Text(if(item.mime=="image/gif")"GIF ▷" else if(item.edited)"已編輯" else "圖片",
+                    val isDragging=draggingId==item.id && !bulkEditing
+                    val isSelected=item.id in selectedIds
+                    val draggedModifier=if(bulkEditing) Modifier else Modifier.pointerInput(item.id,shown) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart={
+                                draggingId=item.id
+                                dragTranslation=Offset.Zero
+                                dropTargetId=item.id
+                            },
+                            onDrag={change,delta->
+                                change.consume()
+                                dragTranslation+=delta
+                                val current=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
+                                if(current!=null) {
+                                    val centerX=current.offset.x+current.size.width/2f+dragTranslation.x
+                                    val centerY=current.offset.y+current.size.height/2f+dragTranslation.y
+                                    dropTargetId=packGridState.layoutInfo.visibleItemsInfo
+                                        .filter {it.key is String}
+                                        .minByOrNull {visible->
+                                            val dx=visible.offset.x+visible.size.width/2f-centerX
+                                            val dy=visible.offset.y+visible.size.height/2f-centerY
+                                            dx*dx+dy*dy
+                                        }?.key as? String
+                                }
+                            },
+                            onDragEnd={
+                                dropTargetId?.let {store.reorderTo(item.id,it)}
+                                draggingId=null
+                                dragTranslation=Offset.Zero
+                                dropTargetId=null
+                            },
+                            onDragCancel={
+                                draggingId=null
+                                dragTranslation=Offset.Zero
+                                dropTargetId=null
+                            }
+                        )
+                    }
+                    Column(
+                        Modifier
+                            .then(draggedModifier)
+                            .graphicsLayer {
+                                if(isDragging) {
+                                    translationX=dragTranslation.x
+                                    translationY=dragTranslation.y
+                                    scaleX=1.06f
+                                    scaleY=1.06f
+                                    shadowElevation=12.dp.toPx()
+                                }
+                            }
+                            .background(
+                                if(isSelected) PackCard else PackPaper,
+                                RoundedCornerShape(14.dp)
+                            )
+                            .clickable {
+                                if(bulkEditing) selectedIds=if(isSelected) selectedIds-item.id else selectedIds+item.id
+                                else selectedImage=item
+                            }
+                            .padding(5.dp)
+                    ) {
+                        Box {
+                            AsyncImage(model=File(item.display),contentDescription="檢視圖片",
+                                modifier=Modifier.fillMaxWidth().height(92.dp))
+                            if(bulkEditing) Checkbox(
+                                checked=isSelected,
+                                onCheckedChange={checked->
+                                    selectedIds=if(checked) selectedIds+item.id else selectedIds-item.id
+                                },
+                                modifier=Modifier.align(Alignment.TopEnd)
+                            )
+                        }
+                        if(!bulkEditing) Text(if(item.mime=="image/gif")"GIF ▷" else if(item.edited)"已編輯" else "圖片",
                             color=Color.Gray,style=MaterialTheme.typography.labelSmall)
                     }
                 }
             }
+
         }
     }
     if(creating) AlertDialog(onDismissRequest={creating=false},title={Text("建立圖集")},
@@ -160,13 +280,11 @@ fun ImagePacksScreen(store:ImagePackStore) {
             }},dismissButton={TextButton(onClick={deleting=null}){Text("取消")}})
     }
     selectedImage?.let {item->
-        AlertDialog(onDismissRequest={selectedImage=null},title={Text(if(item.mime=="image/gif")"GIF 動圖" else "圖片管理")},
+        AlertDialog(onDismissRequest={selectedImage=null},
             text={Column {
                 AsyncImage(model=File(item.display),contentDescription="圖片預覽",modifier=Modifier.fillMaxWidth().height(190.dp))
                 if(item.mime!="image/gif") TextButton(onClick={editing=item;selectedImage=null}) {Text("編輯圖片")}
                 if(selectedPack!=null) TextButton(onClick={store.setCover(selectedPack!!,item.id);selectedImage=null}) {Text("設為圖集封面")}
-                TextButton(onClick={store.reorder(item.id,-1);selectedImage=null}) {Text("向前移動")}
-                TextButton(onClick={store.reorder(item.id,1);selectedImage=null}) {Text("向後移動")}
                 TextButton(onClick={showMove=item;selectedImage=null}) {Text("移到其他圖集")}
                 TextButton(onClick={store.deleteImage(item.id);selectedImage=null}) {Text("永久刪除此圖片",color=Color(0xFFB3261E))}
             }},confirmButton={TextButton(onClick={selectedImage=null}){Text("關閉")}})
@@ -180,6 +298,37 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 }
             }},confirmButton={TextButton(onClick={showMove=null}){Text("取消")}})
     }
+    if(bulkMove) AlertDialog(
+        onDismissRequest={bulkMove=false},
+        title={Text("移動 ${selectedIds.size} 張圖片")},
+        text={LazyColumn {
+            item {
+                TextButton(enabled=selectedPack!=null,onClick={
+                    store.moveMany(selectedIds,null)
+                    selectedIds=emptySet();bulkMove=false;bulkEditing=false
+                }){Text("未分類圖片")}
+            }
+            items(packs.size) {index->
+                val target=packs[index]
+                TextButton(enabled=target.id!=selectedPack,onClick={
+                    store.moveMany(selectedIds,target.id)
+                    selectedIds=emptySet();bulkMove=false;bulkEditing=false
+                }){Text(target.name)}
+            }
+        }},
+        confirmButton={TextButton(onClick={bulkMove=false}){Text("取消")}}
+    )
+    if(bulkDeleteConfirm) AlertDialog(
+        onDismissRequest={bulkDeleteConfirm=false},
+        title={Text("刪除 ${selectedIds.size} 張圖片？")},
+        text={Text("只會刪除 Sticker Saver 內選取的圖片，不會刪除手機相簿原檔。")},
+        confirmButton={TextButton(onClick={
+            store.deleteMany(selectedIds)
+            selectedIds=emptySet();bulkEditing=false;bulkDeleteConfirm=false
+        }){Text("刪除",color=Color(0xFFB3261E))}},
+        dismissButton={TextButton(onClick={bulkDeleteConfirm=false}){Text("取消")}}
+    )
+
 }
 
 private fun readImage(context:Context,uri:Uri):Bitmap?=runCatching {
