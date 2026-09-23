@@ -3,6 +3,7 @@ package com.local.threadssticker
 import android.content.ClipDescription
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -57,6 +58,11 @@ class StickerKeyboardService : InputMethodService() {
     private var scopeMode = ScopeMode.RECENT
     private var categoryMode: String? = null
     private var adapter: StickerAdapter? = null
+    private var displayedStickers: List<StickerItem> = emptyList()
+    private lateinit var updateBanner: TextView
+    private val updateChecker by lazy { UpdateChecker(this) }
+    private var keyboardUpdate: UpdateInfo? = null
+    private var updateDownloading = false
     private var keyboardSwitchInProgress = false
 
     override fun onCreate() {
@@ -127,6 +133,35 @@ class StickerKeyboardService : InputMethodService() {
             marginStart = dp(8)
         })
         root.addView(top)
+        updateBanner = TextView(this).apply {
+            textSize = 13f
+            setTextColor(INK)
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(5), dp(12), dp(5))
+            background = roundedBackground(WARM_SELECTED, dp(14).toFloat())
+            visibility = View.GONE
+            setOnClickListener { startKeyboardUpdate() }
+            setOnLongClickListener {
+                keyboardUpdate?.let { updateChecker.dismissForToday(it.version) }
+                keyboardUpdate = null
+                renderUpdateBanner()
+                true
+            }
+        }
+        root.addView(updateBanner, LinearLayout.LayoutParams(-1, dp(38)).apply {
+            topMargin = dp(5)
+            bottomMargin = dp(4)
+        })
+        keyboardUpdate = updateChecker.cachedKeyboardUpdate()
+        renderUpdateBanner()
+        if (updateChecker.shouldCheckKeyboard()) {
+            updateChecker.markKeyboardCheckAttempt()
+            serviceScope.launch {
+                val found = runCatching { updateChecker.check() }.getOrNull()
+                keyboardUpdate = found?.takeUnless { updateChecker.isDismissedToday(it.version) }
+                renderUpdateBanner()
+            }
+        }
 
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -166,6 +201,53 @@ class StickerKeyboardService : InputMethodService() {
         updateCategorySpinner()
         refreshGrid()
         return root
+    }
+
+    private fun renderUpdateBanner() {
+        if (!::updateBanner.isInitialized) return
+        val info = keyboardUpdate ?: updateChecker.cachedKeyboardUpdate()
+        if (!updateChecker.autoCheckEnabled || info == null || updateChecker.isDismissedToday(info.version)) {
+            updateBanner.visibility = View.GONE
+            return
+        }
+        keyboardUpdate = info
+        updateBanner.visibility = View.VISIBLE
+        updateBanner.text = if (updateDownloading) "正在下載新版…" else "↑ 新版本 v" + info.version + " · 點擊下載更新"
+    }
+
+    private fun startKeyboardUpdate() {
+        val info = keyboardUpdate ?: return
+        if (updateDownloading) return
+        updateDownloading = true
+        renderUpdateBanner()
+        serviceScope.launch {
+            runCatching {
+                val file = updateChecker.downloadApk(info) { progress ->
+                    updateBanner.post {
+                        if (::updateBanner.isInitialized) updateBanner.text =
+                            "下載 v" + info.version + "… " + progress + "%"
+                    }
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                    !packageManager.canRequestPackageInstalls()
+                ) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    Toast.makeText(this@StickerKeyboardService, "請允許安裝後再次點擊更新", Toast.LENGTH_LONG).show()
+                } else {
+                    val uri = FileProvider.getUriForFile(this@StickerKeyboardService,
+                        packageName + ".fileprovider", file)
+                    startActivity(Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }.onFailure {
+                Toast.makeText(this@StickerKeyboardService,
+                    "更新失敗：" + (it.message ?: "請重試"), Toast.LENGTH_LONG).show()
+            }
+            updateDownloading = false
+            renderUpdateBanner()
+        }
     }
 
     private fun updateCategorySpinner() {
