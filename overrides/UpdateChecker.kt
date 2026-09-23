@@ -37,7 +37,7 @@ class UpdateChecker(private val context: Context) {
     private val prefs = context.getSharedPreferences("update_settings", Context.MODE_PRIVATE)
 
     var autoCheckEnabled: Boolean
-        get() = prefs.getBoolean("auto_check", false)
+        get() = prefs.getBoolean("auto_check", true)
         set(value) { prefs.edit().putBoolean("auto_check", value).apply() }
 
     fun currentVersion(): String = runCatching {
@@ -60,20 +60,16 @@ class UpdateChecker(private val context: Context) {
         )
     }
 
-    fun shouldCheckKeyboard(now: Long = System.currentTimeMillis()): Boolean {
+    // App 與鍵盤共用檢查狀態：檢查成功後 15 分鐘，失敗後 5 分鐘再試。
+    // 原本各自儲存的 keyboard_last_attempt_at 不再影響更新顯示。
+    fun shouldAutoCheckNow(now: Long = System.currentTimeMillis()): Boolean {
         if (!autoCheckEnabled) return false
-        val lastAttempt = prefs.getLong("keyboard_last_attempt_at", 0L)
-        val interval = if (prefs.getLong("keyboard_last_success_at", 0L) >= lastAttempt && lastAttempt > 0L)
-            24L * 60L * 60L * 1000L else 15L * 60L * 1000L
+        val lastAttempt = prefs.getLong("shared_last_attempt_at", 0L)
+        if (lastAttempt <= 0L) return true
+        val lastSuccess = prefs.getLong("last_successful_check_at", 0L)
+        val interval = if (lastSuccess >= lastAttempt) 15L * 60L * 1000L
+                       else 5L * 60L * 1000L
         return now - lastAttempt >= interval
-    }
-
-    fun markKeyboardCheckSuccess(now: Long = System.currentTimeMillis()) {
-        prefs.edit().putLong("keyboard_last_success_at", now).apply()
-    }
-
-    fun markKeyboardCheckAttempt(now: Long = System.currentTimeMillis()) {
-        prefs.edit().putLong("keyboard_last_attempt_at", now).apply()
     }
 
     fun cacheKeyboardUpdate(info: UpdateInfo?) {
@@ -111,6 +107,7 @@ class UpdateChecker(private val context: Context) {
     }
 
     suspend fun check(): UpdateInfo? = withContext(Dispatchers.IO) {
+        prefs.edit().putLong("shared_last_attempt_at", System.currentTimeMillis()).apply()
         val request = Request.Builder()
             .url("https://api.github.com/repos/nununuuuu/StickerSaver/releases/latest")
             .header("Accept", "application/vnd.github+json")
