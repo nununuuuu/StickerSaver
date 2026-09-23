@@ -47,6 +47,34 @@ class UpdateChecker(private val context: Context) {
 
     fun shouldAutoCheck(): Boolean = autoCheckEnabled
 
+    fun cachedKeyboardUpdate(): UpdateInfo? {
+        val version = prefs.getString("keyboard_update_version", null)?.takeIf { it.isNotBlank() } ?: return null
+        if (compareVersions(version, currentVersion()) <= 0 || isDismissedToday(version)) return null
+        return UpdateInfo(
+            version = version,
+            releaseUrl = prefs.getString("keyboard_update_release", "").orEmpty(),
+            apkUrl = prefs.getString("keyboard_update_apk", null),
+            releaseDate = null,
+            features = emptyList(),
+            fixes = emptyList()
+        )
+    }
+
+    fun shouldCheckKeyboard(now: Long = System.currentTimeMillis()): Boolean =
+        autoCheckEnabled && now - prefs.getLong("keyboard_last_attempt_at", 0L) >= 24L * 60L * 60L * 1000L
+
+    fun markKeyboardCheckAttempt(now: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("keyboard_last_attempt_at", now).apply()
+    }
+
+    fun cacheKeyboardUpdate(info: UpdateInfo?) {
+        prefs.edit()
+            .putString("keyboard_update_version", info?.version)
+            .putString("keyboard_update_release", info?.releaseUrl)
+            .putString("keyboard_update_apk", info?.apkUrl)
+            .apply()
+    }
+
     fun markSuccessfulCheck(now: Long = System.currentTimeMillis()) {
         prefs.edit().putLong("last_successful_check_at", now).apply()
     }
@@ -88,7 +116,10 @@ class UpdateChecker(private val context: Context) {
         markSuccessfulCheck()
 
         val tag = json.optString("tag_name").removePrefix("v")
-        if (tag.isBlank() || compareVersions(tag, currentVersion()) <= 0) return@withContext null
+        if (tag.isBlank() || compareVersions(tag, currentVersion()) <= 0) {
+            cacheKeyboardUpdate(null)
+            return@withContext null
+        }
 
         val body = json.optString("body")
         val assets = json.optJSONArray("assets")
@@ -103,7 +134,7 @@ class UpdateChecker(private val context: Context) {
             }
         }
 
-        UpdateInfo(
+        val info = UpdateInfo(
             version = tag,
             releaseUrl = json.optString("html_url"),
             apkUrl = apkUrl,
@@ -111,6 +142,8 @@ class UpdateChecker(private val context: Context) {
             features = parseSection(body, listOf("新增功能", "新功能", "Features", "Added")),
             fixes = parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed")),
         )
+        cacheKeyboardUpdate(info)
+        info
     }
 
     suspend fun recentReleases(limit: Int = 5): List<ReleaseHistoryItem> = withContext(Dispatchers.IO) {
