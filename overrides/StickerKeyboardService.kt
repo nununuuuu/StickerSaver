@@ -214,16 +214,15 @@ class StickerKeyboardService : InputMethodService() {
     }
 
     private fun checkKeyboardUpdates() {
-        if (keyboardCheckRunning || !updateChecker.shouldCheckKeyboard()) return
+        if (keyboardCheckRunning || !updateChecker.shouldAutoCheckNow()) return
         keyboardCheckRunning = true
-        updateChecker.markKeyboardCheckAttempt()
         serviceScope.launch {
             runCatching { updateChecker.check() }
                 .onSuccess { found ->
-                    updateChecker.markKeyboardCheckSuccess()
                     keyboardUpdate = found?.takeUnless { updateChecker.isDismissedToday(it.version) }
                 }
             keyboardCheckRunning = false
+            keyboardUpdate = updateChecker.cachedKeyboardUpdate()
             renderUpdateBanner()
         }
     }
