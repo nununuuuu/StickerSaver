@@ -18,6 +18,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.grid.animateItem
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -73,8 +77,8 @@ fun ImagePacksScreen(store:ImagePackStore) {
     var bulkMove by remember { mutableStateOf(false) }
     var bulkDeleteConfirm by remember { mutableStateOf(false) }
     var draggingId by remember { mutableStateOf<String?>(null) }
-    var dragTranslation by remember { mutableStateOf(Offset.Zero) }
-    var dropTargetId by remember { mutableStateOf<String?>(null) }
+    var dragPointer by remember { mutableStateOf(Offset.Zero) }
+    var lastDropTarget by remember { mutableStateOf<String?>(null) }
     val packGridState=rememberLazyGridState()
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if(uris.isNotEmpty()) {
@@ -109,14 +113,13 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 bulkEditing=false;selectedIds=emptySet();inPack=false
             }) {Icon(Icons.Outlined.ArrowBack,"返回圖集")}
             Text(if(!inPack)"自訂圖集" else currentPack?.name?:"未分類圖片",
-                style=MaterialTheme.typography.titleLarge,color=PackInk,modifier=Modifier.weight(1f))
+                style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold,color=PackInk,
+                modifier=Modifier.weight(1f),maxLines=1)
             if(!inPack) FilledTonalButton(onClick={newName="";creating=true}) {
                 Icon(Icons.Outlined.Add,"新增圖集");Spacer(Modifier.width(4.dp));Text("新增")
             } else {
-                if(!bulkEditing) TextButton(onClick={bulkEditing=true;selectedIds=emptySet()}) {
+                if(!bulkEditing) IconButton(onClick={bulkEditing=true;selectedIds=emptySet()}) {
                     Icon(Icons.Outlined.Checklist,"批量編輯")
-                    Spacer(Modifier.width(3.dp))
-                    Text("批量編輯")
                 }
                 FilledTonalButton(onClick={pickNew=false;pickForPack=selectedPack;picker.launch("image/*")}) {
                     Icon(Icons.Outlined.Add,"加入")
@@ -140,7 +143,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                     Column(Modifier.fillMaxWidth().background(PackCard,RoundedCornerShape(18.dp))
                         .clickable {selectedPack=p.id;inPack=true}.padding(8.dp)) {
                         if(cover!=null) AsyncImage(model=File(cover.display),contentDescription=p.name,
-                            modifier=Modifier.fillMaxWidth().height(116.dp))
+                            modifier=Modifier.fillMaxWidth().height(130.dp),contentScale=ContentScale.Fit)
                         else Box(Modifier.fillMaxWidth().height(116.dp),contentAlignment=Alignment.Center) {
                             Icon(Icons.Outlined.Collections,"空圖集",modifier=Modifier.size(42.dp))
                         }
@@ -184,56 +187,45 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 items(shown,key={it.id}) { item->
                     val isDragging=draggingId==item.id && !bulkEditing
                     val isSelected=item.id in selectedIds
-                    val draggedModifier=if(bulkEditing) Modifier else Modifier.pointerInput(item.id,shown) {
+                    val draggedModifier=if(bulkEditing) Modifier else Modifier.pointerInput(item.id) {
                         detectDragGesturesAfterLongPress(
-                            onDragStart={
+                            onDragStart={ touch->
                                 draggingId=item.id
-                                dragTranslation=Offset.Zero
-                                dropTargetId=item.id
+                                val position=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
+                                dragPointer=if(position==null)touch else Offset(position.offset.x.toFloat(),position.offset.y.toFloat())+touch
+                                lastDropTarget=item.id
                             },
                             onDrag={change,delta->
                                 change.consume()
-                                dragTranslation+=delta
-                                val current=packGridState.layoutInfo.visibleItemsInfo.firstOrNull {it.key==item.id}
-                                if(current!=null) {
-                                    val centerX=current.offset.x+current.size.width/2f+dragTranslation.x
-                                    val centerY=current.offset.y+current.size.height/2f+dragTranslation.y
-                                    dropTargetId=packGridState.layoutInfo.visibleItemsInfo
-                                        .filter {it.key is String}
-                                        .minByOrNull {visible->
-                                            val dx=visible.offset.x+visible.size.width/2f-centerX
-                                            val dy=visible.offset.y+visible.size.height/2f-centerY
-                                            dx*dx+dy*dy
-                                        }?.key as? String
+                                dragPointer+=delta
+                                val target=packGridState.layoutInfo.visibleItemsInfo
+                                    .filter {it.key is String}
+                                    .minByOrNull {visible->
+                                        val dx=visible.offset.x+visible.size.width/2f-dragPointer.x
+                                        val dy=visible.offset.y+visible.size.height/2f-dragPointer.y
+                                        dx*dx+dy*dy
+                                    }?.key as? String
+                                if(target!=null && target!=item.id && target!=lastDropTarget) {
+                                    lastDropTarget=target
+                                    store.reorderTo(item.id,target)
                                 }
                             },
                             onDragEnd={
-                                dropTargetId?.let {store.reorderTo(item.id,it)}
                                 draggingId=null
-                                dragTranslation=Offset.Zero
-                                dropTargetId=null
+                                lastDropTarget=null
                             },
                             onDragCancel={
                                 draggingId=null
-                                dragTranslation=Offset.Zero
-                                dropTargetId=null
+                                lastDropTarget=null
                             }
                         )
                     }
                     Column(
                         Modifier
                             .then(draggedModifier)
-                            .graphicsLayer {
-                                if(isDragging) {
-                                    translationX=dragTranslation.x
-                                    translationY=dragTranslation.y
-                                    scaleX=1.06f
-                                    scaleY=1.06f
-                                    shadowElevation=12.dp.toPx()
-                                }
-                            }
+                            .animateItem()
                             .background(
-                                if(isSelected) PackCard else PackPaper,
+                                if(isSelected || isDragging) PackCard else PackPaper,
                                 RoundedCornerShape(14.dp)
                             )
                             .clickable {
@@ -244,7 +236,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                     ) {
                         Box {
                             AsyncImage(model=File(item.display),contentDescription="檢視圖片",
-                                modifier=Modifier.fillMaxWidth().height(92.dp))
+                                modifier=Modifier.fillMaxWidth().height(114.dp),contentScale=ContentScale.Fit)
                             if(bulkEditing) Checkbox(
                                 checked=isSelected,
                                 onCheckedChange={checked->
@@ -253,34 +245,42 @@ fun ImagePacksScreen(store:ImagePackStore) {
                                 modifier=Modifier.align(Alignment.TopEnd)
                             )
                         }
-                        if(!bulkEditing) Text(if(item.mime=="image/gif")"GIF ▷" else if(item.edited)"已編輯" else "圖片",
-                            color=Color.Gray,style=MaterialTheme.typography.labelSmall)
+                        if(!bulkEditing && (item.mime=="image/gif" || item.edited)) Text(
+                            if(item.mime=="image/gif")"GIF ▷" else "已編輯",
+                            color=Color.Gray,style=MaterialTheme.typography.labelSmall
+                        )
                     }
                 }
             }
 
         }
     }
-    if(creating) AlertDialog(onDismissRequest={creating=false},title={Text("建立圖集")},
-        text={OutlinedTextField(newName,{newName=it},label={Text("圖集名稱")},singleLine=true)},
+    if(creating) PackDialog(onDismissRequest={creating=false},title={Text("建立圖集")},
+        text={PackNameField(newName,{newName=it},"圖集名稱")},
         confirmButton={TextButton(enabled=newName.isNotBlank(),onClick={
             pickNew=true;picker.launch("image/*")
         }){Text("選擇圖片")}},
         dismissButton={TextButton(onClick={creating=false}){Text("取消")}})
-    if(rename!=null) AlertDialog(onDismissRequest={rename=null},title={Text("重新命名")},
-        text={OutlinedTextField(renameText,{renameText=it},label={Text("圖集名稱")})},
+    if(rename!=null) PackDialog(onDismissRequest={rename=null},title={Text("重新命名")},
+        text={PackNameField(renameText,{renameText=it},"圖集名稱")},
         confirmButton={TextButton(enabled=renameText.isNotBlank(),onClick={store.renamePack(rename!!.id,renameText);rename=null}){Text("儲存")}},
         dismissButton={TextButton(onClick={rename=null}){Text("取消")}})
     deleting?.let {pack->
-        AlertDialog(onDismissRequest={deleting=null},title={Text("刪除「${pack.name}」？")},
-            text={Text("此圖集有 ${images.count {it.packId==pack.id}} 張圖片。請選擇保留圖片或一併刪除；手機相簿原檔不受影響。")},
-            confirmButton={Column {
-                TextButton(onClick={store.deletePack(pack.id,true);deleting=null}) {Text("只刪圖集，圖片移至未分類")}
-                TextButton(onClick={store.deletePack(pack.id,false);deleting=null}) {Text("刪除圖集與其中所有圖片",color=Color(0xFFB3261E))}
-            }},dismissButton={TextButton(onClick={deleting=null}){Text("取消")}})
+        val count=images.count {it.packId==pack.id}
+        PackDialog(onDismissRequest={deleting=null},title={Text("刪除「${pack.name}」？")},
+            text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text("此圖集有 ${count} 張圖片；手機相簿原檔不受影響。",color=Color.Gray)
+                PackOption("只刪除圖集","保留 ${count} 張圖片，移至未分類。",onClick={
+                    store.deletePack(pack.id,true);deleting=null
+                })
+                PackOption("刪除圖集與圖片","一併刪除圖集及其中 ${count} 張圖片在 Sticker Saver 內的紀錄。",danger=true,onClick={
+                    store.deletePack(pack.id,false);deleting=null
+                })
+            }},
+            confirmButton={TextButton(onClick={deleting=null}){Text("取消",color=PackInk)}})
     }
     selectedImage?.let {item->
-        AlertDialog(onDismissRequest={selectedImage=null},
+        PackDialog(onDismissRequest={selectedImage=null},
             text={Column {
                 AsyncImage(model=File(item.display),contentDescription="圖片預覽",modifier=Modifier.fillMaxWidth().height(190.dp))
                 if(item.mime!="image/gif") TextButton(onClick={editing=item;selectedImage=null}) {Text("編輯圖片")}
@@ -290,7 +290,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
             }},confirmButton={TextButton(onClick={selectedImage=null}){Text("關閉")}})
     }
     showMove?.let {item->
-        AlertDialog(onDismissRequest={showMove=null},title={Text("移動圖片")},
+        PackDialog(onDismissRequest={showMove=null},title={Text("移動圖片")},
             text={LazyColumn {
                 item {TextButton(onClick={store.move(item.id,null);showMove=null}){Text("未分類圖片")}}
                 items(packs.size) {index->val pack=packs[index]
@@ -298,7 +298,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
                 }
             }},confirmButton={TextButton(onClick={showMove=null}){Text("取消")}})
     }
-    if(bulkMove) AlertDialog(
+    if(bulkMove) PackDialog(
         onDismissRequest={bulkMove=false},
         title={Text("移動 ${selectedIds.size} 張圖片")},
         text={LazyColumn {
@@ -318,7 +318,7 @@ fun ImagePacksScreen(store:ImagePackStore) {
         }},
         confirmButton={TextButton(onClick={bulkMove=false}){Text("取消")}}
     )
-    if(bulkDeleteConfirm) AlertDialog(
+    if(bulkDeleteConfirm) PackDialog(
         onDismissRequest={bulkDeleteConfirm=false},
         title={Text("刪除 ${selectedIds.size} 張圖片？")},
         text={Text("只會刪除 Sticker Saver 內選取的圖片，不會刪除手機相簿原檔。")},
@@ -329,6 +329,58 @@ fun ImagePacksScreen(store:ImagePackStore) {
         dismissButton={TextButton(onClick={bulkDeleteConfirm=false}){Text("取消")}}
     )
 
+}
+
+@Composable
+private fun PackDialog(
+    onDismissRequest:()->Unit,
+    title:(@Composable ()->Unit)?=null,
+    text:(@Composable ()->Unit)?=null,
+    confirmButton:@Composable ()->Unit,
+    dismissButton:(@Composable ()->Unit)?=null,
+) {
+    AlertDialog(
+        onDismissRequest=onDismissRequest,
+        title=title,
+        text=text,
+        confirmButton=confirmButton,
+        dismissButton=dismissButton,
+        containerColor=PackPaper,
+        titleContentColor=PackInk,
+        textContentColor=PackInk,
+        tonalElevation=0.dp,
+        shape=RoundedCornerShape(26.dp)
+    )
+}
+
+@Composable
+private fun PackNameField(value:String,onValueChange:(String)->Unit,hint:String) {
+    OutlinedTextField(
+        value=value,
+        onValueChange=onValueChange,
+        modifier=Modifier.fillMaxWidth(),
+        singleLine=true,
+        placeholder={Text(hint,color=Color(0xFF9E9993))},
+        colors=OutlinedTextFieldDefaults.colors(
+            focusedTextColor=PackInk,unfocusedTextColor=PackInk,
+            focusedBorderColor=PackInk,unfocusedBorderColor=Color(0xFF9E9993),
+            focusedContainerColor=PackPaper,unfocusedContainerColor=PackPaper,
+            cursorColor=PackInk
+        ),
+        shape=RoundedCornerShape(14.dp)
+    )
+}
+
+@Composable
+private fun PackOption(title:String,description:String,danger:Boolean=false,onClick:()->Unit) {
+    Column(
+        Modifier.fillMaxWidth().border(1.dp,if(danger)Color(0xFFD6ABA6) else PackCard,RoundedCornerShape(16.dp))
+            .clickable(onClick=onClick).padding(14.dp),
+        verticalArrangement=Arrangement.spacedBy(4.dp)
+    ) {
+        Text(title,color=if(danger)Color(0xFFAF332B) else PackInk,fontWeight=FontWeight.SemiBold)
+        Text(description,color=Color.Gray,style=MaterialTheme.typography.bodySmall)
+    }
 }
 
 private fun readImage(context:Context,uri:Uri):Bitmap?=runCatching {
@@ -471,7 +523,7 @@ private fun PackImageEditor(item:PackImage,store:ImagePackStore,onBack:()->Unit,
             TextButton(onClick={overlayPicker.launch("image/*")}){Text("疊圖")}
         }
     }
-    if(savePrompt) AlertDialog(onDismissRequest={savePrompt=false},title={Text("儲存編輯結果")},
+    if(savePrompt) PackDialog(onDismissRequest={savePrompt=false},title={Text("儲存編輯結果")},
         text={Text("更新目前圖片，或另存為同圖集內的新圖片？手機相簿原檔不會修改。")},
         confirmButton={Column {
             TextButton(onClick={runCatching{store.saveEdited(item.id,editor.render(),false)}.onSuccess{onSaved()}.onFailure{
