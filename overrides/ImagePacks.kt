@@ -116,6 +116,43 @@ class ImagePackStore(private val context: Context) {
         val ranks=list.mapIndexed {index,img->img.id to index}.toMap()
         _images.value=_images.value.map {if(it.id in ranks)it.copy(order=ranks.getValue(it.id))else it};ensureCovers();save()
     }
+    @Synchronized fun reorderTo(id:String,targetId:String) {
+        val item=_images.value.firstOrNull {it.id==id}?:return
+        val target=_images.value.firstOrNull {it.id==targetId && it.packId==item.packId}?:return
+        if(id==target.id)return
+        val ordered=_images.value.filter {it.packId==item.packId}.sortedBy {it.order}.toMutableList()
+        ordered.removeAll {it.id==id}
+        val index=ordered.indexOfFirst {it.id==targetId}
+        if(index<0)return
+        ordered.add(index,item)
+        val ranks=ordered.mapIndexed {position,img->img.id to position}.toMap()
+        _images.value=_images.value.map {img->ranks[img.id]?.let {img.copy(order=it)}?:img}
+        save()
+    }
+
+    @Synchronized fun moveMany(ids:Set<String>,packId:String?) {
+        if(packId!=null && _packs.value.none {it.id==packId})return
+        val moving=_images.value.filter {it.id in ids && it.packId!=packId}.sortedBy {it.order}
+        if(moving.isEmpty())return
+        val nextOrder=_images.value.count {it.packId==packId}
+        val ranks=moving.mapIndexed {index,item->item.id to nextOrder+index}.toMap()
+        _images.value=_images.value.map {item->
+            ranks[item.id]?.let {item.copy(packId=packId,order=it)}?:item
+        }
+        ensureCovers();save()
+    }
+
+    @Synchronized fun deleteMany(ids:Set<String>) {
+        val removed=_images.value.filter {it.id in ids}
+        if(removed.isEmpty())return
+        _images.value=_images.value.filterNot {it.id in ids}
+        ensureCovers();save()
+        removed.forEach {item->
+            File(item.original).delete()
+            if(item.display!=item.original)File(item.display).delete()
+        }
+    }
+
     @Synchronized fun deleteImage(id:String) {
         val old=_images.value.firstOrNull {it.id==id}?:return
         _images.value=_images.value.filterNot {it.id==id};ensureCovers();save()
