@@ -113,18 +113,20 @@ fun StickerApp(activity: ComponentActivity, initialSharedText: String?, focusedC
 
     LaunchedEffect(Unit) {
         if (checker.shouldAutoCheck()) {
-            delay(600)
-            var info: UpdateInfo? = null
-            for (attempt in 0..1) {
-                val result = runCatching { checker.check() }
-                if (result.isSuccess) {
-                    info = result.getOrNull()
-                    break
+            // 先顯示 App／鍵盤共用的新版快取，不必等候網路檢查。
+            checker.cachedKeyboardUpdate()?.let { update = it }
+            if (checker.shouldAutoCheckNow()) {
+                delay(600)
+                var info: UpdateInfo? = null
+                for (attempt in 0..1) {
+                    val result = runCatching { checker.check() }
+                    if (result.isSuccess) {
+                        info = result.getOrNull()
+                        break
+                    }
+                    if (attempt == 0) delay(1500)
                 }
-                if (attempt == 0) delay(1500)
-            }
-            if (info != null && !checker.isDismissedToday(info!!.version)) {
-                update = info
+                update = info?.takeUnless { checker.isDismissedToday(it.version) }
             }
         }
     }
