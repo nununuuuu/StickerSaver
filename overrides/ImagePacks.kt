@@ -130,6 +130,22 @@ class ImagePackStore(private val context: Context) {
         save()
     }
 
+    // Apply a complete in-pack drag preview atomically after the user releases.
+    @Synchronized fun reorderToOrder(ids:List<String>) {
+        if(ids.isEmpty() || ids.size!=ids.toSet().size)return
+        val current=_images.value
+        val selected=current.filter {it.id in ids}
+        if(selected.size!=ids.size)return
+        val packId=selected.first().packId
+        if(selected.any {it.packId!=packId})return
+        val packItems=current.filter {it.packId==packId}
+        if(packItems.size!=ids.size || packItems.any {it.id !in ids})return
+        val ranks=ids.withIndex().associate {it.value to it.index}
+        if(packItems.all {it.order==ranks[it.id]})return
+        _images.value=current.map {image->ranks[image.id]?.let {image.copy(order=it)}?:image}
+        save()
+    }
+
     @Synchronized fun moveMany(ids:Set<String>,packId:String?) {
         if(packId!=null && _packs.value.none {it.id==packId})return
         val moving=_images.value.filter {it.id in ids && it.packId!=packId}.sortedBy {it.order}
