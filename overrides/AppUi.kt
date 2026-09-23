@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -1342,7 +1343,7 @@ private fun LibraryTabs(
     pageOffset: Float,
     onSelect: (Int) -> Unit,
 ) {
-    val labels = listOf("最新", "常用", "全部")
+    val labels = listOf("最近", "收藏", "全部")
     BoxWithConstraints(
         Modifier
             .padding(horizontal = 16.dp)
@@ -1684,6 +1685,7 @@ private fun Sources(repo: StickerRepository, sources: List<SourceRecord>, sticke
     var editing by remember { mutableStateOf<SourceRecord?>(null) }
     var deleting by remember { mutableStateOf<SourceRecord?>(null) }
     var viewing by remember { mutableStateOf<SourceRecord?>(null) }
+    BackHandler(enabled = viewing != null && editing == null && deleting == null) { viewing = null }
 
     Column(Modifier.fillMaxSize()) {
         if (viewing != null) {
@@ -1888,26 +1890,35 @@ private fun PostSourceCard(
 
                 Spacer(Modifier.weight(1f))
 
-                OutlinedButton(
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(source.url))
-                            )
-                        }.onFailure {
-                            Toast.makeText(context, "無法開啟來源網址", Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .combinedClickable(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(source.url)))
+                                }.onFailure {
+                                    Toast.makeText(context, "無法開啟來源網址", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            onLongClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Threads URL", source.url))
+                                Toast.makeText(context, "已複製網址", Toast.LENGTH_SHORT).show()
+                            }
+                        ),
+                    color = Tile,
                     shape = RoundedCornerShape(14.dp),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp)
+                    border = BorderStroke(1.dp, Muted.copy(alpha = .4f))
                 ) {
-                    Text("前往")
-                    Spacer(Modifier.width(4.dp))
-                    Icon(
-                        Icons.Outlined.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
+                    Row(
+                        Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("前往", color = Ink)
+                        Spacer(Modifier.width(4.dp))
+                        Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp), tint = Ink)
+                    }
                 }
             }
         }
