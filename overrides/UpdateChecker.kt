@@ -149,7 +149,7 @@ class UpdateChecker(private val context: Context) {
             apkUrl = apkUrl,
             releaseDate = formatReleaseDate(json.optString("published_at")),
             features = parseSection(body, listOf("新增功能", "新功能", "Features", "Added")),
-            fixes = parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed")),
+            fixes = parseSection(body, listOf("修正", "修正項目", "修正功能", "介面修正", "功能修正", "Fixes", "Fixed")),
         )
         cacheKeyboardUpdate(info)
         info
@@ -173,7 +173,7 @@ class UpdateChecker(private val context: Context) {
                     val body = item.optString("body")
                     val changes = (
                         parseSection(body, listOf("新增功能", "新功能", "Features", "Added")) +
-                        parseSection(body, listOf("修正項目", "修正", "修正功能", "Fixes", "Fixed"))
+                        parseSection(body, listOf("修正", "修正項目", "修正功能", "介面修正", "功能修正", "Fixes", "Fixed"))
                     ).distinct().take(6)
                     add(
                         ReleaseHistoryItem(
