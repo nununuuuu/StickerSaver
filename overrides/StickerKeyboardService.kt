@@ -106,7 +106,7 @@ class StickerKeyboardService : InputMethodService() {
     override fun onCreateInputView(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(8))
+            setPadding(dp(12), dp(9), dp(12), dp(8))
             setBackgroundColor(PAPER)
         }
 
@@ -115,7 +115,7 @@ class StickerKeyboardService : InputMethodService() {
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        top.addView(arrowButton { returnToPreviousKeyboard() }, linear(dp(42), dp(42)))
+        top.addView(arrowButton { returnToPreviousKeyboard() }, linear(dp(40), dp(40)))
 
         search = EditText(this).apply {
             hint = "搜尋分類"
@@ -127,8 +127,8 @@ class StickerKeyboardService : InputMethodService() {
             background = roundedBackground(TILE, dp(18).toFloat())
             addTextChangedListener(SimpleTextWatcher { refreshGrid() })
         }
-        top.addView(search, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
-            marginStart = dp(8)
+        top.addView(search, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
+            marginStart = dp(10)
         })
 
         categorySpinner = Spinner(this).apply {
@@ -148,8 +148,8 @@ class StickerKeyboardService : InputMethodService() {
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             }
         }
-        top.addView(categorySpinner, LinearLayout.LayoutParams(dp(112), dp(42)).apply {
-            marginStart = dp(8)
+        top.addView(categorySpinner, LinearLayout.LayoutParams(dp(105), dp(40)).apply {
+            marginStart = dp(10)
         })
         root.addView(top)
         updateBanner = TextView(this).apply {
@@ -176,17 +176,17 @@ class StickerKeyboardService : InputMethodService() {
         renderUpdateBanner()
         checkKeyboardUpdates()
 
-        modeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        modeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0,dp(6),0,dp(6)) }
         modeRow.addView(tabText("貼圖庫") {packMode=false;showKeyboardMode()},LinearLayout.LayoutParams(0,dp(32),1f))
         modeRow.addView(tabText("圖集") {packMode=true;showKeyboardMode()},LinearLayout.LayoutParams(0,dp(32),1f))
         root.addView(modeRow)
         packCovers = LinearLayout(this).apply {orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL}
         packStrip = HorizontalScrollView(this).apply {isHorizontalScrollBarEnabled=false;visibility=View.GONE;addView(packCovers)}
-        root.addView(packStrip,linear(-1,dp(54)))
+        root.addView(packStrip,LinearLayout.LayoutParams(-1,dp(58)).apply {topMargin=dp(4);bottomMargin=dp(4)})
         val tabs = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(2), dp(8), dp(2), dp(8))
+            setPadding(dp(2), dp(9), dp(2), dp(9))
         }
         recentTab = tabText("最近") { scopeMode = ScopeMode.RECENT; refreshGrid() }
         frequentTab = tabText("收藏") { scopeMode = ScopeMode.FREQUENT; refreshGrid() }
@@ -203,10 +203,10 @@ class StickerKeyboardService : InputMethodService() {
 
         grid = GridView(this).apply {
             numColumns = 4
-            verticalSpacing = dp(8)
-            horizontalSpacing = dp(8)
+            verticalSpacing = dp(12)
+            horizontalSpacing = dp(10)
             stretchMode = GridView.STRETCH_COLUMN_WIDTH
-            setPadding(dp(1), dp(2), dp(1), dp(6))
+            setPadding(dp(2), dp(7), dp(2), dp(7))
             clipToPadding = false
             selector = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
             onItemClickListener = AdapterView.OnItemClickListener { _, _, position, _ ->
@@ -219,7 +219,7 @@ class StickerKeyboardService : InputMethodService() {
                 true
             }
         }
-        root.addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(286)))
+        root.addView(grid, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(286)).apply {topMargin=dp(4)})
 
         updateCategorySpinner()
         refreshGrid()
@@ -431,9 +431,9 @@ class StickerKeyboardService : InputMethodService() {
             override fun getView(position:Int,convertView:View?,parent:android.view.ViewGroup?):View {
                 val view=(convertView as? ImageView)?:ImageView(this@StickerKeyboardService).apply {
                     scaleType=ImageView.ScaleType.CENTER_INSIDE
-                    background=roundedBackground(TILE,dp(15).toFloat())
-                    layoutParams=android.widget.AbsListView.LayoutParams(-1,dp(76))
-                    setPadding(dp(5),dp(5),dp(5),dp(5))
+                    background=roundedBackground(Color.TRANSPARENT,dp(15).toFloat())
+                    layoutParams=android.widget.AbsListView.LayoutParams(-1,dp(84))
+                    setPadding(dp(4),dp(5),dp(4),dp(5))
                 }
                 val item=currentPackImages[position]
                 view.load(File(item.display),imageLoader)
@@ -639,14 +639,16 @@ class StickerKeyboardService : InputMethodService() {
 
         override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup?): View {
             val frame = (convertView as? FrameLayout) ?: FrameLayout(context).apply {
+                clipChildren = true
+                clipToPadding = true
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
-                    setColor(TILE)
+                    setColor(Color.TRANSPARENT)
                     cornerRadius = dp(context, 17).toFloat()
                 }
                 layoutParams = android.widget.AbsListView.LayoutParams(
                     android.widget.AbsListView.LayoutParams.MATCH_PARENT,
-                    dp(context, 76)
+                    dp(context, 84)
                 )
                 addView(ImageView(context).apply {
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
