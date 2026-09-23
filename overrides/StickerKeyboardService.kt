@@ -404,24 +404,37 @@ class StickerKeyboardService : InputMethodService() {
         packCovers.removeAllViews()
         val unclassified=images.filter {it.packId==null}
         if(unclassified.isNotEmpty()) {
+            val active=selectedPackId==unclassifiedPackId
             packCovers.addView(TextView(this).apply {
-                text="未分類";gravity=Gravity.CENTER;textSize=12f
+                text="未分類"
+                gravity=Gravity.CENTER
+                textSize=12f
                 setTextColor(INK)
-                background=roundedBackground(if(selectedPackId==unclassifiedPackId)WARM_SELECTED else WARM_CARD,dp(13).toFloat())
+                background=roundedBackground(if(active) WARM_SELECTED else Color.TRANSPARENT,dp(12).toFloat())
+                foreground=pillRipple(12)
                 setOnClickListener {selectedPackId=unclassifiedPackId;refreshPackGrid()}
-            },linear(dp(67),dp(46)))
+            },LinearLayout.LayoutParams(dp(56),dp(50)).apply {marginEnd=dp(7)})
         }
         for(pack in packs) {
             val image=images.firstOrNull {it.id==pack.coverId}?:images.firstOrNull {it.packId==pack.id}
-            val cover=ImageView(this).apply {
-                scaleType=ImageView.ScaleType.CENTER_CROP
+            val selected=selectedPackId==pack.id
+            val coverButton=FrameLayout(this).apply {
+                background=roundedBackground(if(selected) WARM_SELECTED else Color.TRANSPARENT,dp(12).toFloat())
+                clipToOutline=true
+                foreground=pillRipple(12)
                 contentDescription=pack.name
-                background=roundedBackground(if(selectedPackId==pack.id)WARM_SELECTED else WARM_CARD,dp(12).toFloat())
-                setPadding(dp(3),dp(3),dp(3),dp(3))
-                if(image!=null)load(File(image.display),imageLoader)
+                isClickable=true
                 setOnClickListener {selectedPackId=pack.id;refreshPackGrid()}
             }
-            packCovers.addView(cover,LinearLayout.LayoutParams(dp(49),dp(49)).apply {marginEnd=dp(7)})
+            val coverImage=ImageView(this).apply {
+                scaleType=ImageView.ScaleType.FIT_CENTER
+                background=roundedBackground(Color.TRANSPARENT,dp(9).toFloat())
+                clipToOutline=true
+                contentDescription=pack.name
+                if(image!=null)load(File(image.display),imageLoader)
+            }
+            coverButton.addView(coverImage,FrameLayout.LayoutParams(dp(42),dp(42),Gravity.CENTER))
+            packCovers.addView(coverButton,LinearLayout.LayoutParams(dp(50),dp(50)).apply {marginEnd=dp(7)})
         }
         currentPackImages=images.filter {it.packId==(if(selectedPackId==unclassifiedPackId)null else selectedPackId)}.sortedBy {it.order}
         grid.adapter=object:BaseAdapter() {
