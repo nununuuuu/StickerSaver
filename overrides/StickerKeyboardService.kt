@@ -227,6 +227,30 @@ class StickerKeyboardService : InputMethodService() {
         return root
     }
 
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        if (restarting || attribute == null ||
+            attribute.inputType == android.text.InputType.TYPE_NULL) return
+
+        // Some Android IME hand-offs select Sticker Saver but leave its window
+        // hidden until the editor is tapped again. Only recover a live editor
+        // when this IME is still selected and Android has not requested a show.
+        serviceScope.launch {
+            delay(240)
+            if (currentInputConnection == null || isShowInputRequested) return@launch
+            val selected = runCatching {
+                Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
+            }.getOrNull()
+            if (selected?.startsWith(packageName + "/") == true) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    requestShowSelf(InputMethodManager.SHOW_IMPLICIT)
+                } else {
+                    showWindow(true)
+                }
+            }
+        }
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         keyboardUpdate = updateChecker.cachedKeyboardUpdate()
