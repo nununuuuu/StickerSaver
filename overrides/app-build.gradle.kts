@@ -11,8 +11,8 @@ android {
         applicationId = "com.local.threadssticker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27
-        versionName = "0.3.15"
+        versionCode = 28
+        versionName = "0.3.16"
     }
 
     signingConfigs {
